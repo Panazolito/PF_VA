@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Superpowers (herramienta de desarrollo)
+docs/superpowers/
+.superpowers/
+
+# Distribución
+dist/
+build/
+*.egg-info/
