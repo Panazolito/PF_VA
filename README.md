@@ -1,13 +1,13 @@
-# 🖐️ Control del Cursor por Gestos — Visión Artificial
+# 👁️+🖐️ Control Multimodal del Cursor (Vista + Manos) — Visión Artificial
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
-[![MediaPipe Hands](https://img.shields.io/badge/MediaPipe-Hands-brightgreen.svg)](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker)
+[![MediaPipe Face & Hands](https://img.shields.io/badge/MediaPipe-Face%20%2B%20Hands-brightgreen.svg)](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker)
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.x-red.svg)](https://opencv.org/)
-[![Tests](https://img.shields.io/badge/Tests-39%20passing-success.svg)](https://github.com/Panazolito/PF_VA)
+[![Tests](https://img.shields.io/badge/Tests-74%20passing-success.svg)](https://github.com/Panazolito/PF_VA)
 
 Proyecto semestral de **Tópicos Especiales I (Visión Artificial)** — **Universidad Tecnológica de Panamá (UTP)**, 2do Semestre 2026.
 
-Sistema de control del cursor del computador y periféricos del sistema operativo mediante gestos manuales detectados en tiempo real con la cámara web, integrando un **módulo de aislamiento de usuario activo (User Lock)** para operar de forma segura en entornos multi-persona (quirófanos, aulas, salas de reuniones y plantas industriales).
+Sistema multimodal sin contacto que combina **seguimiento ocular de iris (Vista)** para desplazar el cursor sin fatiga de brazo (*Gorilla Arm*) y **gestos manuales relajados (Manos)** para ejecutar clics, arrastre y scroll, integrando un **módulo de aislamiento de usuario activo (User Lock)** para operar de forma segura en entornos multi-persona.
 
 ---
 
@@ -69,29 +69,31 @@ stateDiagram-v2
 
 ---
 
-## 🎮 Tabla de Gestos y Comandos
+## 🎮 Tabla de Gestos y Comandos (Modo Híbrido Vista + Manos)
 
-### Control de Sesión y Seguridad
+### Control de Sesión y Ergonomía (Anti-Fatiga *Gorilla Arm*)
 
-| Gesto | Dedos | Duración | Acción |
+| Gesto / Acción | Dedos / Estado | Duración | Acción |
 |-------|-------|----------|--------|
 | Palma abierta | 🖐️ `[1, 1, 1, 1, 1]` | 2.0 s | **Activar control** (bloquear usuario activo) |
+| Bajar la mano al escritorio | 🛋️ Rostro presente | Libre | **Descanso de brazo** (la vista sigue moviendo el cursor sin perder la sesión) |
+| Apoyar/asomar mano bloqueada | 🖐️ Misma mano | Inmediato | **Reanudar gestos** desde posición baja de descanso sin reactivar 2 s |
 | Puño cerrado | ✊ `[0, 0, 0, 0, 0]` | 2.0 s | **Pausar control** (congelar cursor) |
 | Palma abierta (en pausa) | 🖐️ `[1, 1, 1, 1, 1]` | 1.0 s | **Reactivar control** desde pausa |
-| Retirar mano del encuadre | 💨 | 3.0 s | **Liberación automática** (retorno a INACTIVO) |
+| Ausencia total (sin rostro ni mano) | 💨 | 3.0 s | **Liberación automática** (retorno a INACTIVO) |
 
 ### Acciones del Cursor (Una vez ACTIVO)
 
-| Gesto | Visual | Acción en el Sistema Operativo |
+| Entrada / Gesto | Visual | Acción en el Sistema Operativo |
 |-------|--------|--------------------------------|
-| Solo índice levantado | ☝️ `[0, 1, 0, 0, 0]` | **Mover cursor** con Filtro One Euro (anclaje en nudillo Landmark 5) |
-| Acercar pulgar e índice | 🤏 Distancia norm < 0.52 | **Pre-pellizco / Congelar posición** (Click Lock: cero desviación) |
-| Pellizco pulgar + índice | 🤏 Distancia norm < 0.32 | **Clic izquierdo** (disparado con confirmación temporal e histéresis) |
-| Pellizco + Desplazamiento | 🤏 Movimiento > 15px | **Arrastre (Drag & Drop)** con zona muerta anti-arrastre accidental |
-| Pellizco pulgar + medio | 🤏 Pulgar + Medio | **Clic derecho** contextual (con posición congelada) |
-| Índice + medio levantados | ✌️ `[0, 1, 1, 0, 0]` | **Scroll vertical** (desplazando la mano arriba/abajo) |
-| Teclas `+` / `s` | ⌨️ Teclado | **Aumentar sensibilidad** (alcanzar esquinas con menor movimiento) |
-| Teclas `-` / `a` | ⌨️ Teclado | **Reducir sensibilidad** (mayor precisión quirúrgica) |
+| Mirada (Iris 468 / 473) | 👁️ Face Mesh | **Mover cursor** con Filtro One Euro y congelado automático en parpadeo |
+| Acercar pulgar e índice (postura relajada) | 🤏 Distancia norm < 0.52 | **Pre-pellizco / Congelar mirada** (Click Lock: cero desviación) |
+| Pellizco pulgar + índice (relajado u OK) | 🤏 Distancia norm < 0.32 | **Clic izquierdo** (no exige mantener el índice rígido `[0,1,0,0,0]`) |
+| Pellizco + Desplazar mano / mirar | 🤏 Movimiento > 15px | **Arrastre (Drag & Drop)** hacia donde apunta la vista |
+| Pellizco pulgar + medio (relajado) | 🤏 Pulgar + Medio | **Clic derecho** contextual (con posición congelada) |
+| Índice + medio quietos + Mirada | ✌️ + 👁️ `[0, 1, 1, 0, 0]` | **Scroll con la Vista** (mantén ✌️ quieto como pedal y mira arriba/abajo para deslizar sin rebote) |
+| Teclas `+` / `s` y `-` / `a` | ⌨️ Teclado | **Aumentar / Reducir sensibilidad ocular** en vivo |
+| Tecla `r` | ⌨️ Teclado | **Recalibrar umbral basal de parpadeo** |
 | Presionar `q` o `Esc` | ⌨️ Teclado | **Salir del programa** de forma segura |
 
 ---
@@ -200,15 +202,21 @@ python main.py
 
 ```
 PF_VA/
-├── main.py                     # Bucle de video, orquestación, HUD y soporte world landmarks 3D
-├── user_lock.py                # Máquina de estados para aislamiento de usuario activo
+├── main.py                     # Bucle híbrido principal: Vista (cursor) + Manos (clics/arrastre/scroll)
+├── main_ocular.py              # Módulo ocular autónomo y mapeo compute_gaze_screen_pos
+├── blink_detector.py           # Estabilización ante parpadeo y calibración dinámica ocular
+├── user_lock.py                # Máquina de estados UserLock con persistencia por presencia facial
 ├── hand_detector.py            # Detección de dedos, clasificación gestual y panel HUD
-├── gesture_controller.py       # Controlador: Filtro One Euro, Anclaje Landmark 5, Histéresis y Drag Zone
-├── test_gesture_controller.py  # 29 tests unitarios para control gestual, One Euro, Histéresis y Anclaje
-├── test_user_lock.py           # 15 tests unitarios para user_lock (máquina de estados y continuidad)
+├── gesture_controller.py       # Controlador: Filtro One Euro, Pinza Relajada, Scroll por Vista e Histéresis
+├── test_gesture_controller.py  # 38 tests unitarios (control gestual, One Euro, Histéresis, modo híbrido y scroll)
+├── test_user_lock.py           # 18 tests unitarios (estados, descanso de mano, continuidad)
+├── test_blink_detector.py      # 10 tests unitarios (parpadeo y mapeo ocular a 4 esquinas)
 ├── test_hand_detector.py       # 8 tests unitarios para hand_detector
-├── PropuestaPF_Sanchez_Gonzalez_Esteves_Vasquez.md # Documento formal de la propuesta académica
-├── docs/                       # Documentación técnica y planes de arquitectura
+├── documentacion_project/      # Artículo IEEE y verificación de referencias bibliográficas
+│   ├── Documento_IEEE_Control_Gestual.md
+│   └── Notas_Verificacion_Referencias.md
+├── PropuestaPF_Sanchez_Gonzalez_Esteves_Vasquez.md # Propuesta académica formal
+├── docs/                       # Documentación técnica y planes de implementación
 │   ├── estrategia_aislamiento_usuario.md
 │   └── superpowers/plans/
 ├── requirements.txt            # Dependencias del proyecto
@@ -220,7 +228,7 @@ PF_VA/
 
 ## 🧪 Verificación y Pruebas Unitarias
 
-El proyecto cuenta con una cobertura integral de **54 pruebas unitarias automatizadas** usando `unittest` estándar (sin dependencias adicionales de test runner):
+El proyecto cuenta con una cobertura integral de **74 pruebas unitarias automatizadas** usando `unittest` estándar (sin dependencias adicionales de test runner):
 
 ```bash
 # Ejecutar todas las pruebas unitarias
@@ -229,8 +237,17 @@ python -m unittest discover -v
 
 Resultado verificado:
 ```
-Ran 54 tests in 0.281s — OK
+Ran 74 tests in 0.960s — OK
 ```
+
+---
+
+## 📚 Referencias Científicas Clave
+
+- **Filtro One Euro:** G. Casiez, N. Roussel, and D. Vogel, "1 € Filter: A Simple Speed-based Low-pass Filter for Noisy Input in Interactive Systems," in *Proc. SIGCHI Conf. Human Factors in Computing Systems (CHI '12)*, Austin, TX, USA, 2012, pp. 2527–2530, doi: `10.1145/2207676.2208639`.
+- **Fatiga de Brazo (*Gorilla Arm*):** J. D. Hincapié-Ramos, X. Guo, P. Moghadasian, and P. Irani, "Consumed endurance: A metric to quantify arm fatigue of mid-air interactions," in *Proc. SIGCHI Conf. Human Factors in Computing Systems (CHI '14)*, Toronto, ON, Canada, 2014, pp. 1063–1072, doi: `10.1145/2556288.2557130`.
+- **Interacción Multimodal Mirada + Gestos:** I. Chatterjee, R. Xiao, and C. Harrison, "Gaze+Gesture: Expressive, precise and targeted free-space interactions," in *Proc. ACM Int. Conf. Multimodal Interaction (ICMI '15)*, Seattle, WA, USA, 2015, pp. 131–138, doi: `10.1145/2818346.2820752`.
+- **Paradigma *Gaze + Pinch*:** K. Pfeuffer, B. Mayer, D. Mardanbegi, and H. Gellersen, "Gaze + pinch interaction in virtual reality," in *Proc. 5th Symp. Spatial User Interaction (SUI '17)*, Brighton, UK, 2017, pp. 99–108, doi: `10.1145/3131277.3132180`.
 
 ---
 
@@ -239,3 +256,4 @@ Ran 54 tests in 0.281s — OK
 Proyecto desarrollado para el curso **Tópicos Especiales I (Visión Artificial)** — **Universidad Tecnológica de Panamá (UTP)**.
 Autores: Victor Sánchez, Crisarys Vasquez, Juan Gonzalez, Alexandra Esteves.
 Uso académico y demostrativo de tecnologías de Interacción Hombre-Máquina (HCI).
+

@@ -370,7 +370,8 @@ class GestureController:
                  deadzone_px=3, pre_pinch_threshold=58, pinch_threshold=38,
                  post_click_freeze_s=0.20, anchor_landmark_id=INDEX_MCP_ID,
                  t_on=0.32, t_off=0.45, t_pre=0.52, drag_deadzone_px=15,
-                 min_cutoff=1.0, beta=0.007, confirm_frames=2):
+                 min_cutoff=1.0, beta=0.007, confirm_frames=2,
+                 move_cursor=True):
         """
         Inicializa el controlador con todos los parámetros de estabilización.
         """
@@ -383,6 +384,7 @@ class GestureController:
         self.post_click_freeze_s = post_click_freeze_s
         self.anchor_landmark_id = anchor_landmark_id
         self.drag_deadzone_px = drag_deadzone_px
+        self.move_cursor = move_cursor
 
         # Filtro de suavizado (One Euro Filter por defecto)
         self.smoother = CursorSmoother(
@@ -481,7 +483,8 @@ class GestureController:
         return m, frame_w - m, m, frame_h - m
 
     def process_gesture(self, fingers, landmarks, frame_w, frame_h, frame_margin,
-                        handedness="Right", world_landmarks=None, timestamp=None):
+                        handedness="Right", world_landmarks=None, timestamp=None,
+                        external_cursor_pos=None):
         """
         Procesa el gesto detectado y ejecuta la acción estabilizada correspondiente.
         """
@@ -513,6 +516,11 @@ class GestureController:
                     pyautogui.mouseUp()
                 self._is_dragging = False
                 result["drag_ended"] = True
+            if external_cursor_pos is not None and not self.move_cursor:
+                self._last_smooth_x = int(external_cursor_pos[0])
+                self._last_smooth_y = int(external_cursor_pos[1])
+                result["cursor_x"] = self._last_smooth_x
+                result["cursor_y"] = self._last_smooth_y
             self.left_click_debouncer.reset()
             self.right_click_debouncer.reset()
             return result
@@ -550,6 +558,34 @@ class GestureController:
         norm_dist_thumb_index = dist_thumb_index_px / hand_size
         norm_dist_thumb_middle = dist_thumb_middle_px / hand_size
         result["normalized_dist"] = norm_dist_thumb_index
+
+        # En modo híbrido (move_cursor=False), la mano no apunta: permitir pinza relajada
+        # (Pfeuffer et al., SUI '17; Chatterjee et al., ICMI '15) sin exigir índice rígido [0, 1, 0, 0, 0],
+        # preservando el gesto ✌️ de SCROLL sin que el pulgar doblado lo secuestre hacia PUNTERO.
+        if not self.move_cursor and fingers != [0, 0, 0, 0, 0]:
+            is_peace_scroll = (
+                fingers == [0, 1, 1, 0, 0]
+                or (
+                    fingers == [1, 1, 1, 0, 0]
+                    and norm_dist_thumb_middle >= self.right_pinch_detector.t_pre
+                    and norm_dist_thumb_index >= self.left_pinch_detector.t_pre
+                )
+            )
+            if is_peace_scroll and not self._is_dragging:
+                mode = "SCROLL"
+            elif (
+                norm_dist_thumb_index < self.left_pinch_detector.t_pre
+                or self.left_pinch_detector.is_pinching
+                or self._is_dragging
+            ):
+                mode = "PUNTERO"
+            elif mode != "SCROLL" and (
+                norm_dist_thumb_middle < self.right_pinch_detector.t_pre
+                or self.right_pinch_detector.is_pinching
+            ):
+                mode = "CLIC_DERECHO"
+            self._current_mode = mode
+            result["mode"] = mode
 
         now = timestamp if timestamp is not None else time.time()
         x_min, x_max, y_min, y_max = self._get_active_bounds(frame_w, frame_h, frame_margin)
@@ -596,11 +632,15 @@ class GestureController:
             if should_freeze:
                 if not self._is_click_locked:
                     self._is_click_locked = True
-                    # Si no teníamos posición suavizada previa, inicializarla con el anclaje
+                    # Si no teníamos posición suavizada previa, inicializarla con la vista o el anclaje
                     if self._last_smooth_x == 0 and self._last_smooth_y == 0:
-                        raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
-                        raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
-                        self._last_smooth_x, self._last_smooth_y = self.smoother.smooth(raw_x, raw_y, now)
+                        if external_cursor_pos is not None:
+                            self._last_smooth_x = int(external_cursor_pos[0])
+                            self._last_smooth_y = int(external_cursor_pos[1])
+                        else:
+                            raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
+                            raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
+                            self._last_smooth_x, self._last_smooth_y = self.smoother.smooth(raw_x, raw_y, now)
                     self._locked_cursor_x = self._last_smooth_x
                     self._locked_cursor_y = self._last_smooth_y
 
@@ -613,21 +653,31 @@ class GestureController:
                     self.smoother.reset()
                     self._is_click_locked = False
 
-                raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
-                raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
-                raw_x = int(np.clip(raw_x, 0, self.screen_width - 1))
-                raw_y = int(np.clip(raw_y, 0, self.screen_height - 1))
+                if external_cursor_pos is not None and not self.move_cursor:
+                    smooth_x = int(external_cursor_pos[0])
+                    smooth_y = int(external_cursor_pos[1])
+                    self._last_smooth_x = smooth_x
+                    self._last_smooth_y = smooth_y
+                    cursor_x = smooth_x
+                    cursor_y = smooth_y
+                    result["cursor_locked"] = False
+                    result["moved_cursor"] = False
+                else:
+                    raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
+                    raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
+                    raw_x = int(np.clip(raw_x, 0, self.screen_width - 1))
+                    raw_y = int(np.clip(raw_y, 0, self.screen_height - 1))
 
-                smooth_x, smooth_y = self.smoother.smooth(raw_x, raw_y, now)
-                self._last_smooth_x = smooth_x
-                self._last_smooth_y = smooth_y
-                cursor_x = smooth_x
-                cursor_y = smooth_y
-                result["cursor_locked"] = False
-                result["moved_cursor"] = True
+                    smooth_x, smooth_y = self.smoother.smooth(raw_x, raw_y, now)
+                    self._last_smooth_x = smooth_x
+                    self._last_smooth_y = smooth_y
+                    cursor_x = smooth_x
+                    cursor_y = smooth_y
+                    result["cursor_locked"] = False
+                    result["moved_cursor"] = self.move_cursor
 
-                if self.execute_actions:
-                    pyautogui.moveTo(smooth_x, smooth_y)
+                    if self.execute_actions and self.move_cursor:
+                        pyautogui.moveTo(smooth_x, smooth_y)
 
             result["cursor_x"] = cursor_x
             result["cursor_y"] = cursor_y
@@ -664,17 +714,42 @@ class GestureController:
                 self._is_dragging = False
                 result["drag_ended"] = True
 
-            avg_y = (iy + my) / 2.0
-            if self._last_scroll_y is not None:
-                delta_y = self._last_scroll_y - avg_y
-                if abs(delta_y) > 5:
-                    scroll_amount = int(delta_y * 2)
+            if external_cursor_pos is not None and not self.move_cursor:
+                # Scroll controlado por la VISTA mientras la mano sostiene ✌️ quieta como "pedal":
+                # Mirar por encima de la banda central desliza hacia arriba; mirar por debajo desliza hacia abajo.
+                result["cursor_locked"] = True
+                result["moved_cursor"] = False
+                gaze_y = float(external_cursor_pos[1])
+                center_y = self.screen_height / 2.0
+                deadzone_y = self.screen_height * 0.12
+                scroll_amount = 0
+
+                if gaze_y < center_y - deadzone_y:
+                    span = max(1.0, center_y - deadzone_y)
+                    norm_offset = min(1.0, (center_y - deadzone_y - gaze_y) / span)
+                    scroll_amount = int(round(20 + 70 * norm_offset))
+                elif gaze_y > center_y + deadzone_y:
+                    span = max(1.0, self.screen_height - (center_y + deadzone_y))
+                    norm_offset = min(1.0, (gaze_y - (center_y + deadzone_y)) / span)
+                    scroll_amount = -int(round(20 + 70 * norm_offset))
+
+                if scroll_amount != 0:
                     result["scrolled"] = True
                     result["scroll_amount"] = scroll_amount
                     if self.execute_actions:
                         pyautogui.scroll(scroll_amount)
+            else:
+                avg_y = (iy + my) / 2.0
+                if self._last_scroll_y is not None:
+                    delta_y = self._last_scroll_y - avg_y
+                    if abs(delta_y) > 5:
+                        scroll_amount = int(delta_y * 2)
+                        result["scrolled"] = True
+                        result["scroll_amount"] = scroll_amount
+                        if self.execute_actions:
+                            pyautogui.scroll(scroll_amount)
+                self._last_scroll_y = avg_y
 
-            self._last_scroll_y = avg_y
             self.left_pinch_detector.reset()
             self.right_pinch_detector.reset()
             self.left_click_debouncer.reset()
@@ -703,9 +778,13 @@ class GestureController:
                 if not self._is_click_locked:
                     self._is_click_locked = True
                     if self._last_smooth_x == 0 and self._last_smooth_y == 0:
-                        raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
-                        raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
-                        self._last_smooth_x, self._last_smooth_y = self.smoother.smooth(raw_x, raw_y, now)
+                        if external_cursor_pos is not None:
+                            self._last_smooth_x = int(external_cursor_pos[0])
+                            self._last_smooth_y = int(external_cursor_pos[1])
+                        else:
+                            raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
+                            raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
+                            self._last_smooth_x, self._last_smooth_y = self.smoother.smooth(raw_x, raw_y, now)
                     self._locked_cursor_x = self._last_smooth_x
                     self._locked_cursor_y = self._last_smooth_y
 
@@ -718,21 +797,31 @@ class GestureController:
                     self.smoother.reset()
                     self._is_click_locked = False
 
-                raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
-                raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
-                raw_x = int(np.clip(raw_x, 0, self.screen_width - 1))
-                raw_y = int(np.clip(raw_y, 0, self.screen_height - 1))
+                if external_cursor_pos is not None and not self.move_cursor:
+                    smooth_x = int(external_cursor_pos[0])
+                    smooth_y = int(external_cursor_pos[1])
+                    self._last_smooth_x = smooth_x
+                    self._last_smooth_y = smooth_y
+                    cursor_x = smooth_x
+                    cursor_y = smooth_y
+                    result["cursor_locked"] = False
+                    result["moved_cursor"] = False
+                else:
+                    raw_x = np.interp(ax, (x_min, x_max), (0, self.screen_width))
+                    raw_y = np.interp(ay, (y_min, y_max), (0, self.screen_height))
+                    raw_x = int(np.clip(raw_x, 0, self.screen_width - 1))
+                    raw_y = int(np.clip(raw_y, 0, self.screen_height - 1))
 
-                smooth_x, smooth_y = self.smoother.smooth(raw_x, raw_y, now)
-                self._last_smooth_x = smooth_x
-                self._last_smooth_y = smooth_y
-                cursor_x = smooth_x
-                cursor_y = smooth_y
-                result["cursor_locked"] = False
-                result["moved_cursor"] = True
+                    smooth_x, smooth_y = self.smoother.smooth(raw_x, raw_y, now)
+                    self._last_smooth_x = smooth_x
+                    self._last_smooth_y = smooth_y
+                    cursor_x = smooth_x
+                    cursor_y = smooth_y
+                    result["cursor_locked"] = False
+                    result["moved_cursor"] = self.move_cursor
 
-                if self.execute_actions:
-                    pyautogui.moveTo(smooth_x, smooth_y)
+                    if self.execute_actions and self.move_cursor:
+                        pyautogui.moveTo(smooth_x, smooth_y)
 
             result["cursor_x"] = cursor_x
             result["cursor_y"] = cursor_y
@@ -758,6 +847,12 @@ class GestureController:
                     pyautogui.mouseUp()
                 self._is_dragging = False
                 result["drag_ended"] = True
+
+            if external_cursor_pos is not None and not self.move_cursor:
+                self._last_smooth_x = int(external_cursor_pos[0])
+                self._last_smooth_y = int(external_cursor_pos[1])
+                result["cursor_x"] = self._last_smooth_x
+                result["cursor_y"] = self._last_smooth_y
 
             self.smoother.reset()
             self.left_pinch_detector.reset()

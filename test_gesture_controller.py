@@ -617,6 +617,217 @@ class TestDragDeadzoneAndNormalization(unittest.TestCase):
         self.assertTrue(action["moved_cursor"])
 
 
+class TestHybridGazeHandIntegration(unittest.TestCase):
+    """Pruebas para GestureController cuando la vista controla el cursor (move_cursor=False)."""
+
+    def setUp(self):
+        from gesture_controller import GestureController
+        self.controller = GestureController(
+            screen_width=1920,
+            screen_height=1080,
+            execute_actions=False,
+            hold_time_ms=0,
+            cooldown_ms=0,
+            confirm_frames=1,
+            move_cursor=False
+        )
+
+    @staticmethod
+    def _make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.2, 0.5), index_mcp=(0.5, 0.5)):
+        class MockPt:
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        pts = [MockPt(0.5, 0.5) for _ in range(21)]
+        pts[0] = MockPt(0.5, 0.8)  # Muñeca
+        pts[9] = MockPt(0.5, 0.6)  # MCP medio -> hand_size = 96px
+        pts[5] = MockPt(index_mcp[0], index_mcp[1])
+        pts[8] = MockPt(index_tip[0], index_tip[1])
+        pts[4] = MockPt(thumb_tip[0], thumb_tip[1])
+        return pts
+
+    def test_pointer_mode_uses_external_gaze_pos_without_moving_hand_cursor(self):
+        """Con move_cursor=False, actualiza cursor_x/y desde la vista sin mover por nudillo."""
+        landmarks = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.2, 0.5))
+        res = self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=landmarks,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(1234, 567)
+        )
+        self.assertEqual(res["mode"], "PUNTERO")
+        self.assertFalse(res["moved_cursor"])
+        self.assertFalse(res["cursor_locked"])
+        self.assertEqual((res["cursor_x"], res["cursor_y"]), (1234, 567))
+
+    def test_external_cursor_pos_locks_on_pre_pinch_and_clicks(self):
+        """Al iniciar el pellizco, congela la coordenada de la vista y hace clic en ese punto."""
+        lm_open = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.2, 0.5))
+        self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=lm_open,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(800, 450)
+        )
+        lm_pinch = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.505, 0.305))
+        # Cuadro 1: inicia el pellizco y congela la coordenada en (800, 450)
+        res1 = self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=lm_pinch,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(850, 490)
+        )
+        self.assertTrue(res1["cursor_locked"])
+        # Cuadro 2: ClickDebouncer confirma el pellizco sostenido y dispara el clic en (800, 450)
+        res2 = self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=lm_pinch,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(870, 510)
+        )
+        self.assertTrue(res2["cursor_locked"])
+        self.assertTrue(res2["clicked"])
+        self.assertEqual((res2["cursor_x"], res2["cursor_y"]), (800, 450))
+
+    def test_external_cursor_pos_drag_unfreezes_cursor(self):
+        """Durante el arrastre activo, cursor_locked es False para permitir arrastrar con la vista."""
+        lm_pinch_start = self._make_hand(
+            index_tip=(0.5, 0.3), thumb_tip=(0.5, 0.3), index_mcp=(0.5, 0.5)
+        )
+        self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=lm_pinch_start,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(400, 400)
+        )
+        lm_pinch_moved = self._make_hand(
+            index_tip=(0.6, 0.3), thumb_tip=(0.6, 0.3), index_mcp=(0.6, 0.5)
+        )
+        res = self.controller.process_gesture(
+            fingers=[0, 1, 0, 0, 0],
+            landmarks=lm_pinch_moved,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(900, 600)
+        )
+        self.assertTrue(res["is_dragging"])
+        self.assertFalse(res["cursor_locked"])
+        self.assertEqual((res["cursor_x"], res["cursor_y"]), (900, 600))
+
+    def test_relaxed_hand_pinch_clicks_without_strict_index_pose(self):
+        """En modo híbrido (move_cursor=False), permite hacer clic con pinza relajada (ej. OK sign [0, 0, 1, 1, 1] o mano semiabierta) sin exigir [0, 1, 0, 0, 0]."""
+        lm_pinch = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.503, 0.303))
+        relaxed_fingers = [0, 0, 1, 1, 1]  # Índice doblado tocando pulgar, demás dedos relajados
+
+        res1 = self.controller.process_gesture(
+            fingers=relaxed_fingers,
+            landmarks=lm_pinch,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(640, 360)
+        )
+        self.assertEqual(res1["mode"], "PUNTERO")
+        self.assertTrue(res1["cursor_locked"])
+
+        res2 = self.controller.process_gesture(
+            fingers=relaxed_fingers,
+            landmarks=lm_pinch,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(650, 370)
+        )
+        self.assertTrue(res2["clicked"])
+        self.assertEqual((res2["cursor_x"], res2["cursor_y"]), (640, 360))
+
+    def test_fist_never_triggers_click_in_hybrid_mode(self):
+        """Un puño cerrado [0, 0, 0, 0, 0] debe mantenerse en REPOSO (reservado para pausa) aunque pulgar e índice estén cerca."""
+        lm_pinch = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.503, 0.303))
+        res = self.controller.process_gesture(
+            fingers=[0, 0, 0, 0, 0],
+            landmarks=lm_pinch,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(640, 360)
+        )
+        self.assertEqual(res["mode"], "REPOSO")
+        self.assertFalse(res["clicked"])
+
+    def test_gaze_scroll_up_and_down_with_stationary_hand(self):
+        """En modo híbrido, sostener ✌️ [0, 1, 1, 0, 0] con la mano quieta y mirar arriba/abajo desliza la página continuamente sin rebote."""
+        lm_stationary = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.2, 0.5))
+        fingers_peace = [0, 1, 1, 0, 0]
+
+        # Mirar hacia arriba (y=120 < zona neutra) -> scroll positivo (hacia arriba) con mano inmóvil
+        res_up = self.controller.process_gesture(
+            fingers=fingers_peace,
+            landmarks=lm_stationary,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(960, 120)
+        )
+        self.assertEqual(res_up["mode"], "SCROLL")
+        self.assertTrue(res_up["scrolled"])
+        self.assertGreater(res_up["scroll_amount"], 0)
+        self.assertTrue(res_up["cursor_locked"])
+
+        # Mirar hacia abajo (y=960 > zona neutra) -> scroll negativo (hacia abajo) con mano inmóvil
+        res_down = self.controller.process_gesture(
+            fingers=fingers_peace,
+            landmarks=lm_stationary,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(960, 960)
+        )
+        self.assertEqual(res_down["mode"], "SCROLL")
+        self.assertTrue(res_down["scrolled"])
+        self.assertLess(res_down["scroll_amount"], 0)
+        self.assertTrue(res_down["cursor_locked"])
+
+        # Mirar al centro (y=540 en zona neutra) -> pausa el scroll sin soltar el gesto
+        res_center = self.controller.process_gesture(
+            fingers=fingers_peace,
+            landmarks=lm_stationary,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(960, 540)
+        )
+        self.assertEqual(res_center["mode"], "SCROLL")
+        self.assertFalse(res_center["scrolled"])
+        self.assertEqual(res_center["scroll_amount"], 0)
+
+    def test_peace_gesture_not_hijacked_by_thumb_proximity_in_hybrid_mode(self):
+        """Al hacer ✌️ [0, 1, 1, 0, 0], aunque el pulgar doblado quede a < t_pre del índice en 2D, debe mantenerse en SCROLL."""
+        lm_peace = self._make_hand(index_tip=(0.5, 0.3), thumb_tip=(0.45, 0.35))
+        res = self.controller.process_gesture(
+            fingers=[0, 1, 1, 0, 0],
+            landmarks=lm_peace,
+            frame_w=640,
+            frame_h=480,
+            frame_margin=100,
+            external_cursor_pos=(960, 150)
+        )
+        self.assertEqual(res["mode"], "SCROLL")
+        self.assertTrue(res["scrolled"])
+
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -30,8 +30,10 @@ from mediapipe.python.solutions import drawing_utils as mp_drawing
 from mediapipe.python.solutions import drawing_styles as mp_drawing_styles
 
 from hand_detector import get_fingers_up, get_gesture_name, draw_hud
-from gesture_controller import GestureController
+from gesture_controller import GestureController, OneEuroFilter2D
 from user_lock import UserLock
+from blink_detector import BlinkDetector
+from main_ocular import initialize_face_mesh, compute_gaze_screen_pos
 
 
 def initialize_camera(width=640, height=480):
@@ -60,12 +62,18 @@ def initialize_hands_detector(max_hands=2):
 
 
 def main():
-    """Bucle principal del programa de control por gestos."""
+    """Bucle principal del programa híbrido: Vista (cursor) + Manos (clics y funciones)."""
 
     # 1. Configuración
+    pyautogui.PAUSE = 0
     screen_width, screen_height = pyautogui.size()
     cap = initialize_camera()
     hands_detector = initialize_hands_detector(max_hands=2)
+    face_mesh = initialize_face_mesh()
+
+    # Filtro One Euro para el cursor controlado por la vista y estabilizador de parpadeo (sin clic ocular)
+    gaze_filter = OneEuroFilter2D(min_cutoff=1.2, beta=0.015)
+    blink_detector = BlinkDetector(execute_click=False)
 
     controller = GestureController(
         screen_width=screen_width,
@@ -73,7 +81,8 @@ def main():
         execute_actions=True,
         smoothing_factor=0.4,
         hold_time_ms=150,
-        cooldown_ms=300
+        cooldown_ms=300,
+        move_cursor=False
     )
 
     user_lock = UserLock(
@@ -85,27 +94,28 @@ def main():
         continuity_threshold_px=150
     )
 
-    # Sensibilidad inicial (1.3x permite alcanzar las 4 esquinas con movimiento de mano natural y relajado)
+    # Sensibilidad inicial (1.3x permite alcanzar las 4 esquinas con movimiento ocular natural y relajado)
     sensitivity = 1.3
     p_time = 0
 
-    print("=" * 55)
-    print("  Control por Gestos — Visión Artificial (UTP)")
-    print("=" * 55)
-    print("  Activación:")
+    print("=" * 60)
+    print("  Control Híbrido Vista + Manos — Visión Artificial (UTP)")
+    print("=" * 60)
+    print("  Activación (Seguridad Multi-Persona):")
     print("    - Palma abierta 2s   → Activar control")
     print("    - Puño cerrado 2s    → Pausar control")
-    print("  Gestos (una vez activado):")
-    print("    - Solo índice        → Mover cursor (anclaje en nudillo L5)")
-    print("    - Pellizco (P+I)     → Clic izquierdo (con posición fijada)")
-    print("    - Pellizco + Mover   → Arrastrar elementos (Drag & Drop)")
+    print("  Control sin contacto (una vez ACTIVO):")
+    print("    - Vista (Mirada)     → Mover el cursor (puedes bajar/descansar la mano)")
+    print("    - Pellizco (P+I)     → Clic izquierdo (postura relajada, fija mirada)")
+    print("    - Pellizco + Mover   → Arrastrar elementos con la vista (Drag & Drop)")
     print("    - Pellizco (P+M)     → Clic derecho")
-    print("    - Índice + medio     → Scroll vertical")
+    print("    - Índice + medio ✌️  → Scroll con la VISTA (mantén ✌️ quieto y mira arriba/abajo)")
     print("  Ajustes en vivo:")
-    print("    - Tecla '+' o 's'    → Aumentar sensibilidad (alcanzar esquinas fácilmente)")
-    print("    - Tecla '-' o 'a'    → Reducir sensibilidad (mayor precisión)")
+    print("    - Tecla '+' o 's'    → Aumentar sensibilidad ocular")
+    print("    - Tecla '-' o 'a'    → Reducir sensibilidad ocular")
+    print("    - Tecla 'r'          → Recalibrar umbral de parpadeo")
     print("    - 'q' o 'Esc'        → Salir del programa")
-    print("=" * 55)
+    print("=" * 60)
 
     try:
         while cap.isOpened():
@@ -118,8 +128,7 @@ def main():
             frame = cv2.flip(frame, 1)
             frame_h, frame_w, _ = frame.shape
 
-            # --- Zona activa ergonómica adaptada a la biomecánica de la mano ---
-            # El centro se ajusta a la altura natural del nudillo (Landmark 5)
+            # --- Zona activa ergonómica de referencia ---
             cx = frame_w // 2
             cy = int(frame_h * 0.48)
             base_hw = int(frame_w * 0.32)  # ~205 px
@@ -134,13 +143,42 @@ def main():
             y2 = min(frame_h - 15, cy + eff_hh)
             active_bounds = (x1, x2, y1, y2)
 
-            # Dibujar recuadro de la zona activa que mapea a la pantalla completa
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"Zona Pantalla ({sensitivity:.1f}x) [+/-]", (x1 + 6, y1 - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 0), 1)
-
-            # Convertir a RGB y procesar con MediaPipe
+            # Convertir a RGB y procesar con MediaPipe (Vista + Manos sobre el mismo frame)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            current_time = time.perf_counter()
+
+            # --- Paso 0: Estimar posición del cursor con la VISTA (Face Mesh Iris) ---
+            face_results = face_mesh.process(rgb_frame)
+            gaze_pos = None
+            blink_allows_move = True
+
+            if face_results.multi_face_landmarks:
+                face_landmarks = face_results.multi_face_landmarks[0].landmark
+                eff_margin = 0.08 / sensitivity
+                gaze_x, gaze_y, (iris_r, iris_l) = compute_gaze_screen_pos(
+                    landmarks=face_landmarks,
+                    screen_width=screen_width,
+                    screen_height=screen_height,
+                    cursor_filter=gaze_filter,
+                    timestamp=current_time,
+                    margin_x=eff_margin,
+                    margin_y=eff_margin
+                )
+                gaze_pos = (gaze_x, gaze_y)
+
+                blink_res = blink_detector.update(
+                    landmarks=face_landmarks,
+                    cursor_pos=gaze_pos,
+                    screen_size=(screen_width, screen_height),
+                    timestamp=current_time,
+                    frame_size=(frame_w, frame_h)
+                )
+                blink_allows_move = blink_res["allow_movement"]
+
+                # Dibujar puntos de referencia del iris en el frame
+                for pt in (iris_r, iris_l):
+                    cv2.circle(frame, (int(pt.x * frame_w), int(pt.y * frame_h)), 3, (0, 255, 255), -1)
+
             results = hands_detector.process(rgb_frame)
 
             # --- Paso 1: Detectar dedos de TODAS las manos ---
@@ -172,7 +210,8 @@ def main():
                 all_handedness=all_handedness if all_handedness else None,
                 all_fingers=all_fingers,
                 frame_w=frame_w,
-                frame_h=frame_h
+                frame_h=frame_h,
+                user_present=bool(face_results.multi_face_landmarks)
             )
 
             current_fingers = lock_result["active_fingers"]
@@ -181,7 +220,7 @@ def main():
             active_hand = lock_result["active_hand"]
             action_result = None
 
-            # --- Paso 3: Solo procesar gestos si hay usuario activo ---
+            # --- Paso 3: Solo procesar gestos y mover cursor si hay usuario activo ---
             if active_hand is not None and lock_result["state"] == "ACTIVO":
                 active_landmarks = active_hand.landmark if hasattr(active_hand, "landmark") else active_hand
 
@@ -197,7 +236,8 @@ def main():
                     frame_h=frame_h,
                     frame_margin=active_bounds,
                     handedness=current_handedness or "Right",
-                    world_landmarks=active_world
+                    world_landmarks=active_world,
+                    external_cursor_pos=gaze_pos
                 )
 
                 is_locked = action_result and action_result.get("cursor_locked", False)
@@ -205,7 +245,11 @@ def main():
                 is_clicked = action_result and action_result.get("clicked", False)
                 is_right_clicked = action_result and action_result.get("right_clicked", False)
 
-                # Nudillo del índice (Landmark 5: Anclaje de seguimiento estable)
+                # Mover el cursor con la VISTA salvo que esté congelado por pre-pellizco o parpadeo
+                if gaze_pos is not None and blink_allows_move and not is_locked:
+                    pyautogui.moveTo(gaze_pos[0], gaze_pos[1])
+
+                # Nudillo del índice (Landmark 5: Referencia de arrastre)
                 knuckle = active_landmarks[5]
                 kx, ky = int(knuckle.x * frame_w), int(knuckle.y * frame_h)
                 cv2.circle(frame, (kx, ky), 5, (255, 180, 0), -1)
@@ -215,6 +259,16 @@ def main():
                     cv2.circle(frame, (kx, ky), 22, (255, 255, 0), 2)
                     cv2.putText(frame, "ARRASTRE", (kx + 25, ky + 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2)
+                # Indicador visual de Scroll controlado por la Vista
+                elif action_result and action_result.get("mode") == "SCROLL":
+                    scroll_amt = action_result.get("scroll_amount", 0)
+                    scroll_label = (
+                        "SCROLL VISTA ^" if scroll_amt > 0
+                        else ("SCROLL VISTA v" if scroll_amt < 0 else "SCROLL (MIRA ARRIBA/ABAJO)")
+                    )
+                    cv2.circle(frame, (kx, ky), 18, (255, 200, 0), 2)
+                    cv2.putText(frame, scroll_label, (kx + 22, ky + 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 200, 0), 2)
                 # Indicador visual de posición fijada (pre-pellizco anti-drift)
                 elif is_locked and not is_clicked and not is_right_clicked:
                     cv2.circle(frame, (kx, ky), 18, (0, 215, 255), 2)
@@ -239,10 +293,15 @@ def main():
                     cv2.putText(frame, "CLIC DER!", (cx + 25, cy + 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 0, 255), 2)
             else:
-                # Sin usuario activo: resetear controlador
+                # Si la mano está en descanso fuera de cámara (PERDIDO), mantener el control ocular del cursor
+                if lock_result["state"] == "PERDIDO" and gaze_pos is not None and blink_allows_move:
+                    pyautogui.moveTo(gaze_pos[0], gaze_pos[1])
+
+                # Sin mano activa: resetear controlador de gestos preservando la última posición ocular
                 controller.process_gesture(
                     fingers=None, landmarks=None,
-                    frame_w=frame_w, frame_h=frame_h, frame_margin=active_bounds
+                    frame_w=frame_w, frame_h=frame_h, frame_margin=active_bounds,
+                    external_cursor_pos=gaze_pos
                 )
 
             # Cálculo de FPS
@@ -279,10 +338,14 @@ def main():
                 sensitivity = min(2.5, round(sensitivity + 0.1, 1))
             elif key in (ord('-'), ord('_'), ord('a'), ord('A')):
                 sensitivity = max(0.7, round(sensitivity - 0.1, 1))
+            elif key in (ord('r'), ord('R')):
+                blink_detector.reset_calibration()
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido por el usuario.")
     finally:
+        face_mesh.close()
+        hands_detector.close()
         cap.release()
         cv2.destroyAllWindows()
         print("Cámara liberada. Programa finalizado.")

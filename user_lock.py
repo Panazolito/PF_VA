@@ -74,7 +74,7 @@ class UserLock:
         """Progreso de activación (0.0 a 1.0)."""
         return self._activation_progress
 
-    def update(self, all_hands, all_handedness, all_fingers, frame_w, frame_h):
+    def update(self, all_hands, all_handedness, all_fingers, frame_w, frame_h, user_present=False):
         """
         Actualiza el estado del bloqueo de usuario.
 
@@ -84,6 +84,8 @@ class UserLock:
             all_fingers: Lista de listas [pulgar, índice, medio, anular, meñique] para cada mano.
             frame_w: Ancho del frame en píxeles.
             frame_h: Alto del frame en píxeles.
+            user_present: True si el rostro del usuario activo sigue frente a la cámara
+                          (evita expirar la sesión cuando baja la mano para descansar).
 
         Returns:
             dict: {
@@ -121,7 +123,10 @@ class UserLock:
 
         # --- PERDIDO: mano desapareció, esperando reaparición ---
         elif self._state == "PERDIDO":
-            result = self._handle_lost(hands, handedness_list, fingers_list, frame_w, frame_h, now)
+            result = self._handle_lost(
+                hands, handedness_list, fingers_list, frame_w, frame_h, now,
+                user_present=user_present
+            )
 
         # --- PAUSADO: usuario pidió pausa ---
         elif self._state == "PAUSADO":
@@ -190,7 +195,9 @@ class UserLock:
             if closest_idx < len(handedness_list):
                 self._locked_handedness = handedness_list[closest_idx].classification[0].label
             self._activation_progress = 1.0
+            self._activation_start_time = None
             result["active_hand"] = closest_hand
+            result["active_index"] = closest_idx
             result["active_fingers"] = fingers
             result["handedness"] = self._locked_handedness
             result["activation_progress"] = 1.0
@@ -240,25 +247,45 @@ class UserLock:
         result["handedness"] = self._locked_handedness
         return result
 
-    def _handle_lost(self, hands, handedness_list, fingers_list, fw, fh, now):
+    def _handle_lost(self, hands, handedness_list, fingers_list, fw, fh, now, user_present=False):
         result = self._empty_result()
 
         if hands:
-            # Buscar si la mano reapareció cerca
+            # Buscar si la mano reapareció cerca o si es la única mano con la misma lateralidad
+            # (permite apoyar la mano en el escritorio y retomarla en una posición baja de descanso)
             closest_hand, closest_idx, dist = self._find_closest_hand(hands, fw, fh)
-            if closest_hand is not None and dist <= self._continuity_threshold:
+            candidate_handedness = (
+                handedness_list[closest_idx].classification[0].label
+                if closest_idx is not None and closest_idx < len(handedness_list)
+                else None
+            )
+            same_handedness = (
+                self._locked_handedness is None
+                or candidate_handedness == self._locked_handedness
+            )
+            can_resume = closest_hand is not None and (
+                dist <= self._continuity_threshold
+                or (len(hands) == 1 and same_handedness)
+            )
+            if can_resume:
                 # ¡Reaparición! Volver a ACTIVO
                 self._state = "ACTIVO"
                 self._locked_centroid = self._calculate_centroid(closest_hand, fw, fh)
-                if closest_idx < len(handedness_list):
-                    self._locked_handedness = handedness_list[closest_idx].classification[0].label
+                if candidate_handedness is not None:
+                    self._locked_handedness = candidate_handedness
                 fingers = fingers_list[closest_idx] if closest_idx < len(fingers_list) else None
                 result["active_hand"] = closest_hand
+                result["active_index"] = closest_idx
                 result["active_fingers"] = fingers
                 result["handedness"] = self._locked_handedness
                 return result
 
-        # Verificar timeout
+        # Mientras el rostro del usuario siga presente, mantener viva la espera de la mano en descanso
+        if user_present:
+            self._lost_start_time = now
+            return result
+
+        # Verificar timeout cuando el usuario ya no está presente
         if (now - self._lost_start_time) >= self._lost_timeout:
             self._state = "INACTIVO"
             self._locked_centroid = None
@@ -402,7 +429,7 @@ class UserLock:
             "INACTIVO":  {"color": (100, 100, 100), "icon": "○", "text": "Sin usuario activo"},
             "ACTIVANDO": {"color": (0, 200, 255),   "icon": "◐", "text": "Activando..."},
             "ACTIVO":    {"color": (0, 255, 0),      "icon": "🔒", "text": "Usuario bloqueado"},
-            "PERDIDO":   {"color": (0, 100, 255),    "icon": "⚠", "text": "Mano perdida..."},
+            "PERDIDO":   {"color": (0, 180, 255),    "icon": "⚠", "text": "Mano en descanso (Vista)"},
             "PAUSADO":   {"color": (255, 165, 0),    "icon": "⏸", "text": "En pausa"},
         }
 

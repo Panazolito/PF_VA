@@ -280,6 +280,80 @@ class TestUserLockStates(unittest.TestCase):
         result = self.lock.update(all_hands=[hand], all_handedness=[MockHandedness("Right")], all_fingers=[fingers_fist], frame_w=640, frame_h=480)
         self.assertEqual(result["state"], "INACTIVO")
 
+    def test_hand_rest_persists_while_user_present(self):
+        """Mientras el rostro del usuario esté presente (user_present=True), bajar la mano a descansar no expira la sesión a INACTIVO."""
+        hand = create_mock_hand_at(0.5, 0.5)
+        fingers = [1, 1, 1, 1, 1]
+
+        # Activar sesión
+        self.lock.update(all_hands=[hand], all_handedness=[MockHandedness("Right")], all_fingers=[fingers], frame_w=640, frame_h=480)
+        self.lock._activation_start_time = time.time() - 0.6
+        self.lock.update(all_hands=[hand], all_handedness=[MockHandedness("Right")], all_fingers=[fingers], frame_w=640, frame_h=480)
+        self.assertEqual(self.lock.state, "ACTIVO")
+
+        # Usuario baja la mano para descansar sobre el escritorio (sin manos en cámara), pero su rostro sigue presente
+        self.lock.update(all_hands=None, all_handedness=None, all_fingers=None, frame_w=640, frame_h=480, user_present=True)
+        self.assertEqual(self.lock.state, "PERDIDO")
+
+        # Simular que pasaron más segundos que lost_timeout_s con el rostro presente
+        self.lock._lost_start_time = time.time() - 5.0
+        result = self.lock.update(all_hands=None, all_handedness=None, all_fingers=None, frame_w=640, frame_h=480, user_present=True)
+        self.assertEqual(result["state"], "PERDIDO")
+
+    def test_hand_reappears_at_desk_level_resumes_active(self):
+        """Si la mano bloqueada reaparece en una posición baja de descanso (fuera del radio de 150px), retoma ACTIVO sin requerir reactivación de 2s."""
+        hand_high = create_mock_hand_at(0.5, 0.3)
+        fingers_palm = [1, 1, 1, 1, 1]
+
+        # Activar con mano levantada
+        self.lock.update(all_hands=[hand_high], all_handedness=[MockHandedness("Right")], all_fingers=[fingers_palm], frame_w=640, frame_h=480)
+        self.lock._activation_start_time = time.time() - 0.6
+        self.lock.update(all_hands=[hand_high], all_handedness=[MockHandedness("Right")], all_fingers=[fingers_palm], frame_w=640, frame_h=480)
+        self.assertEqual(self.lock.state, "ACTIVO")
+
+        # Usuario baja la mano (entra en PERDIDO)
+        self.lock.update(all_hands=None, all_handedness=None, all_fingers=None, frame_w=640, frame_h=480, user_present=True)
+        self.assertEqual(self.lock.state, "PERDIDO")
+
+        # Usuario apoya la mano en el borde inferior del encuadre (dist > 150px respecto a 0.3*480) con postura relajada
+        hand_low = create_mock_hand_at(0.5, 0.88)
+        fingers_relaxed = [0, 0, 1, 1, 1]
+        result = self.lock.update(
+            all_hands=[hand_low],
+            all_handedness=[MockHandedness("Right")],
+            all_fingers=[fingers_relaxed],
+            frame_w=640,
+            frame_h=480,
+            user_present=True
+        )
+        self.assertEqual(result["state"], "ACTIVO")
+        self.assertIsNotNone(result["active_hand"])
+
+    def test_intruder_hand_rejected_during_lost_state(self):
+        """En estado PERDIDO, una mano con lateralidad distinta y lejos del centroide no debe robar la sesión."""
+        hand_high = create_mock_hand_at(0.5, 0.3)
+        fingers_palm = [1, 1, 1, 1, 1]
+
+        # Activar con mano derecha
+        self.lock.update(all_hands=[hand_high], all_handedness=[MockHandedness("Right")], all_fingers=[fingers_palm], frame_w=640, frame_h=480)
+        self.lock._activation_start_time = time.time() - 0.6
+        self.lock.update(all_hands=[hand_high], all_handedness=[MockHandedness("Right")], all_fingers=[fingers_palm], frame_w=640, frame_h=480)
+        self.lock.update(all_hands=None, all_handedness=None, all_fingers=None, frame_w=640, frame_h=480, user_present=True)
+        self.assertEqual(self.lock.state, "PERDIDO")
+
+        # Aparece una mano izquierda lejos del centroide anterior
+        intruder_left = create_mock_hand_at(0.1, 0.9)
+        result = self.lock.update(
+            all_hands=[intruder_left],
+            all_handedness=[MockHandedness("Left")],
+            all_fingers=[fingers_palm],
+            frame_w=640,
+            frame_h=480,
+            user_present=True
+        )
+        self.assertEqual(result["state"], "PERDIDO")
+        self.assertIsNone(result["active_hand"])
+
 
 class TestUserLockContinuity(unittest.TestCase):
     """Pruebas para la selección de mano por continuidad espacial y área."""
