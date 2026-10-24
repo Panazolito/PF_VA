@@ -27,3 +27,6 @@ docs/superpowers/
 dist/
 build/
 *.egg-info/
+
+# Tests locales (no se versionan)
+test_*.py
