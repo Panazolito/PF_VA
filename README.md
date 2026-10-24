@@ -158,8 +158,3 @@ pip install -r requirements.txt
 # 3. Ejecutar el sistema
 python main.py
 ```
-
-## 📄 Licencia y Contexto Académico
-
-Proyecto desarrollado para el curso **Tópicos Especiales I (Visión Artificial)** — **Universidad Tecnológica de Panamá (UTP)**.
-Autores: Victor Sánchez, Crisarys Vasquez, Juan Gonzalez, Alexandra Esteves.
