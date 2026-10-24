@@ -1,4 +1,4 @@
-# Avance de Proyecto 2: Control Multimodal del Cursor (Vista + Manos) — Visión Artificial
+# Avance de Proyecto 2: Desarrollo de un Sistema Multimodal de Control de Interfaz de Usuario mediante Rastreo de Mirada y Gestos Manuales en Tiempo Real
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![MediaPipe Face & Hands](https://img.shields.io/badge/MediaPipe-Face%20%2B%20Hands-brightgreen.svg)](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker)
