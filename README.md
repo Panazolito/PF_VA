@@ -75,26 +75,26 @@ stateDiagram-v2
 
 | Gesto / Acción | Dedos / Estado | Duración | Acción |
 |-------|-------|----------|--------|
-| Palma abierta | 🖐️ `[1, 1, 1, 1, 1]` | 2.0 s | **Activar control** (bloquear usuario activo) |
-| Bajar la mano al escritorio | 🛋️ Rostro presente | Libre | **Descanso de brazo** (la vista sigue moviendo el cursor sin perder la sesión) |
-| Apoyar/asomar mano bloqueada | 🖐️ Misma mano | Inmediato | **Reanudar gestos** desde posición baja de descanso sin reactivar 2 s |
-| Puño cerrado | ✊ `[0, 0, 0, 0, 0]` | 2.0 s | **Pausar control** (congelar cursor) |
-| Palma abierta (en pausa) | 🖐️ `[1, 1, 1, 1, 1]` | 1.0 s | **Reactivar control** desde pausa |
-| Ausencia total (sin rostro ni mano) | 💨 | 3.0 s | **Liberación automática** (retorno a INACTIVO) |
+| Palma abierta | `[1, 1, 1, 1, 1]` | 2.0 s | **Activar control** (bloquear usuario activo) |
+| Bajar la mano al escritorio | Rostro presente | Libre | **Descanso de brazo** (la vista sigue moviendo el cursor sin perder la sesión) |
+| Apoyar/asomar mano bloqueada | Misma mano | Inmediato | **Reanudar gestos** desde posición baja de descanso sin reactivar 2 s |
+| Puño cerrado | `[0, 0, 0, 0, 0]` | 2.0 s | **Pausar control** (congelar cursor) |
+| Palma abierta (en pausa) | `[1, 1, 1, 1, 1]` | 1.0 s | **Reactivar control** desde pausa |
+| Ausencia total (sin rostro ni mano) | - | 3.0 s | **Liberación automática** (retorno a INACTIVO) |
 
 ### Acciones del Cursor (Una vez ACTIVO)
 
 | Entrada / Gesto | Visual | Acción en el Sistema Operativo |
 |-------|--------|--------------------------------|
 | Mirada (Iris 468 / 473) | 👁️ Face Mesh | **Mover cursor** con Filtro One Euro y congelado automático en parpadeo |
-| Acercar pulgar e índice (postura relajada) | 🤏 Distancia norm < 0.52 | **Pre-pellizco / Congelar mirada** (Click Lock: cero desviación) |
-| Pellizco pulgar + índice (relajado u OK) | 🤏 Distancia norm < 0.32 | **Clic izquierdo** (no exige mantener el índice rígido `[0,1,0,0,0]`) |
-| Pellizco + Desplazar mano / mirar | 🤏 Movimiento > 15px | **Arrastre (Drag & Drop)** hacia donde apunta la vista |
-| Pellizco pulgar + medio (relajado) | 🤏 Pulgar + Medio | **Clic derecho** contextual (con posición congelada) |
-| Índice + medio quietos + Mirada | ✌️ + 👁️ `[0, 1, 1, 0, 0]` | **Scroll con la Vista** (mantén ✌️ quieto como pedal y mira arriba/abajo para deslizar sin rebote) |
-| Teclas `+` / `s` y `-` / `a` | ⌨️ Teclado | **Aumentar / Reducir sensibilidad ocular** en vivo |
-| Tecla `r` | ⌨️ Teclado | **Recalibrar umbral basal de parpadeo** |
-| Presionar `q` o `Esc` | ⌨️ Teclado | **Salir del programa** de forma segura |
+| Acercar pulgar e índice (postura relajada) | Distancia norm < 0.52 | **Pre-pellizco / Congelar mirada** (Click Lock: cero desviación) |
+| Pellizco pulgar + índice (relajado u OK) | Distancia norm < 0.32 | **Clic izquierdo** (no exige mantener el índice rígido `[0,1,0,0,0]`) |
+| Pellizco + Desplazar mano / mirar | Movimiento > 15px | **Arrastre (Drag & Drop)** hacia donde apunta la vista |
+| Pellizco pulgar + medio (relajado) | Pulgar + Medio | **Clic derecho** contextual (con posición congelada) |
+| Índice + medio quietos + Mirada | `[0, 1, 1, 0, 0]` | **Scroll con la Vista** ( gesto de victoria quieto como pedal y mira arriba/abajo para deslizar sin rebote) |
+| Teclas `+` / `s` y `-` / `a` | Teclado | **Aumentar / Reducir sensibilidad ocular** en vivo |
+| Tecla `r` | Teclado | **Recalibrar umbral basal de parpadeo** |
+| Presionar `q` o `Esc` | Teclado | **Salir del programa** de forma segura |
 
 ---
 
