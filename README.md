@@ -1,4 +1,4 @@
-# 👁️+🖐️ Control Multimodal del Cursor (Vista + Manos) — Visión Artificial
+# Avance de Proyecto 2: Control Multimodal del Cursor (Vista + Manos) — Visión Artificial
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![MediaPipe Face & Hands](https://img.shields.io/badge/MediaPipe-Face%20%2B%20Hands-brightgreen.svg)](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker)
@@ -11,7 +11,7 @@ Sistema multimodal sin contacto que combina **seguimiento ocular de iris (Vista)
 
 ---
 
-## 👥 Autores
+## Autores
 
 - **Victor Sánchez** — 20-70-7342
 - **Crisarys Vasquez** — 8-1003-2328
@@ -20,7 +20,7 @@ Sistema multimodal sin contacto que combina **seguimiento ocular de iris (Vista)
 
 ---
 
-## 🔒 Sistema de Seguridad Multi-Persona (User Lock)
+## Sistema de Seguridad Multi-Persona (User Lock)
 
 En entornos del mundo real como **quirófanos**, **plantas industriales** o **salones de clase**, es habitual que varias personas se muevan dentro del campo visual de la cámara. Un sistema convencional con `max_num_hands=1` elige manos de forma arbitraria, saltando de una persona a otra, o puede provocar clics no intencionados que representan riesgos graves.
 
@@ -69,7 +69,7 @@ stateDiagram-v2
 
 ---
 
-## 🎮 Tabla de Gestos y Comandos (Modo Híbrido Vista + Manos)
+## Tabla de Gestos y Comandos (Modo Híbrido Vista + Manos)
 
 ### Control de Sesión y Ergonomía (Anti-Fatiga *Gorilla Arm*)
 
@@ -97,30 +97,6 @@ stateDiagram-v2
 | Presionar `q` o `Esc` | ⌨️ Teclado | **Salir del programa** de forma segura |
 
 ---
-
-## 🎯 Arquitectura de Precisión Anti-Drift: Los 4 Pilares
-
-El principal desafío ergonómico en interfaces hombre-máquina sin contacto es el **efecto drift** o deslizamiento involuntario: al juntar el pulgar y el índice para cliquear, los tendones y la cadena osteomuscular de la mano desplazan la punta del dedo índice entre 15 y 45 píxeles, desviando el cursor fuera del botón objetivo justo antes del clic.
-
-Para resolver este problema con rigor ingenieril, el sistema implementa la combinación de cuatro técnicas complementarias:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                      ARQUITECTURA DE PRECISIÓN                         │
-├──────────────────────────┬─────────────────────────────────────────────┤
-│ 1. Anclaje en Nudillo    │ Movimiento guiado por Landmark 5 (MCP),     │
-│    (Landmark 5)          │ estructuralmente inmóvil durante la pinza   │
-├──────────────────────────┼─────────────────────────────────────────────┤
-│ 2. Filtro One Euro       │ Suavizado adaptativo a la velocidad         │
-│    (Casiez et al. 2012)  │ (sin temblor en reposo, sin retraso rápido) │
-├──────────────────────────┼─────────────────────────────────────────────┤
-│ 3. Histéresis Normalizada│ Umbral dual T_ON=0.32 / T_OFF=0.45 relativo │
-│    con Confirmación      │ al tamaño rígido de la mano (Muñeca a MCP9) │
-├──────────────────────────┼─────────────────────────────────────────────┤
-│ 4. Congelado + Drag Zone │ Cursor fijo durante el clic y umbral muerto │
-│                          │ de 15px para discriminar clics de arrastres │
-└──────────────────────────┴─────────────────────────────────────────────┘
-```
 
 ### 1. Punto de Anclaje Estable en el Nudillo del Índice (Landmark 5: `INDEX_FINGER_MCP`)
 - **Problema:** En sistemas tradicionales se rastrea la punta del índice (Landmark 8). Cuando el usuario flexiona las falanges para tocar el pulgar, la punta cae y se desplaza inevitablemente.
@@ -152,19 +128,6 @@ Para resolver este problema con rigor ingenieril, el sistema implementa la combi
 
 ---
 
-## 📊 Evaluación Experimental Comparativa
-
-| Parámetro Evaluado | Sin Técnicas (Línea Base) | Con 4 Pilares de Estabilización | Mejora Obtenida |
-|-------------------|--------------------------|---------------------------------|-----------------|
-| **Desviación media al cliquear (Drift)** | 28.4 px | **0.0 px** (fijado en objetivo) | **100% eliminación** |
-| **Temblor estático en reposo (Jitter)** | ± 4.6 px | **< 0.4 px** (0 px con deadzone)| **> 91% reducción** |
-| **Tasa de clics intermitentes (Chatter)** | 18.2% | **0.0%** (por histéresis dual)  | **Eliminación total** |
-| **Falsos clics por ruido de cuadro** | 11.5% | **< 0.8%** (confirmación temp.) | **93% mitigación** |
-| **Arrastres accidentales en botones** | 22.0% | **0.0%** (zona muerta 15px)    | **Eliminación total** |
-| **Sensibilidad a distancia (0.5m vs 1.8m)**| Variación > 60% | **Constante** (normalizado 3D)  | **Escala invariable** |
-
----
-
 ## 🛠️ Requisitos del Sistema
 
 - **Python:** 3.10 o superior (validado en Python 3.12)
@@ -182,7 +145,7 @@ numpy
 
 ---
 
-## 🚀 Instalación y Ejecución
+## Instalación y Ejecución
 
 ```bash
 # 1. Clonar el repositorio
@@ -196,64 +159,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
----
-
-## 📁 Estructura Modular del Proyecto
-
-```
-PF_VA/
-├── main.py                     # Bucle híbrido principal: Vista (cursor) + Manos (clics/arrastre/scroll)
-├── main_ocular.py              # Módulo ocular autónomo y mapeo compute_gaze_screen_pos
-├── blink_detector.py           # Estabilización ante parpadeo y calibración dinámica ocular
-├── user_lock.py                # Máquina de estados UserLock con persistencia por presencia facial
-├── hand_detector.py            # Detección de dedos, clasificación gestual y panel HUD
-├── gesture_controller.py       # Controlador: Filtro One Euro, Pinza Relajada, Scroll por Vista e Histéresis
-├── test_gesture_controller.py  # 38 tests unitarios (control gestual, One Euro, Histéresis, modo híbrido y scroll)
-├── test_user_lock.py           # 18 tests unitarios (estados, descanso de mano, continuidad)
-├── test_blink_detector.py      # 10 tests unitarios (parpadeo y mapeo ocular a 4 esquinas)
-├── test_hand_detector.py       # 8 tests unitarios para hand_detector
-├── documentacion_project/      # Artículo IEEE y verificación de referencias bibliográficas
-│   ├── Documento_IEEE_Control_Gestual.md
-│   └── Notas_Verificacion_Referencias.md
-├── PropuestaPF_Sanchez_Gonzalez_Esteves_Vasquez.md # Propuesta académica formal
-├── docs/                       # Documentación técnica y planes de implementación
-│   ├── estrategia_aislamiento_usuario.md
-│   └── superpowers/plans/
-├── requirements.txt            # Dependencias del proyecto
-├── .gitignore                  # Configuración de exclusión para Git
-└── README.md                   # Documentación principal
-```
-
----
-
-## 🧪 Verificación y Pruebas Unitarias
-
-El proyecto cuenta con una cobertura integral de **74 pruebas unitarias automatizadas** usando `unittest` estándar (sin dependencias adicionales de test runner):
-
-```bash
-# Ejecutar todas las pruebas unitarias
-python -m unittest discover -v
-```
-
-Resultado verificado:
-```
-Ran 74 tests in 0.960s — OK
-```
-
----
-
-## 📚 Referencias Científicas Clave
-
-- **Filtro One Euro:** G. Casiez, N. Roussel, and D. Vogel, "1 € Filter: A Simple Speed-based Low-pass Filter for Noisy Input in Interactive Systems," in *Proc. SIGCHI Conf. Human Factors in Computing Systems (CHI '12)*, Austin, TX, USA, 2012, pp. 2527–2530, doi: `10.1145/2207676.2208639`.
-- **Fatiga de Brazo (*Gorilla Arm*):** J. D. Hincapié-Ramos, X. Guo, P. Moghadasian, and P. Irani, "Consumed endurance: A metric to quantify arm fatigue of mid-air interactions," in *Proc. SIGCHI Conf. Human Factors in Computing Systems (CHI '14)*, Toronto, ON, Canada, 2014, pp. 1063–1072, doi: `10.1145/2556288.2557130`.
-- **Interacción Multimodal Mirada + Gestos:** I. Chatterjee, R. Xiao, and C. Harrison, "Gaze+Gesture: Expressive, precise and targeted free-space interactions," in *Proc. ACM Int. Conf. Multimodal Interaction (ICMI '15)*, Seattle, WA, USA, 2015, pp. 131–138, doi: `10.1145/2818346.2820752`.
-- **Paradigma *Gaze + Pinch*:** K. Pfeuffer, B. Mayer, D. Mardanbegi, and H. Gellersen, "Gaze + pinch interaction in virtual reality," in *Proc. 5th Symp. Spatial User Interaction (SUI '17)*, Brighton, UK, 2017, pp. 99–108, doi: `10.1145/3131277.3132180`.
-
----
-
 ## 📄 Licencia y Contexto Académico
 
 Proyecto desarrollado para el curso **Tópicos Especiales I (Visión Artificial)** — **Universidad Tecnológica de Panamá (UTP)**.
 Autores: Victor Sánchez, Crisarys Vasquez, Juan Gonzalez, Alexandra Esteves.
-Uso académico y demostrativo de tecnologías de Interacción Hombre-Máquina (HCI).
-
