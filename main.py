@@ -20,6 +20,8 @@ Controles por gestos (una vez activado):
 Autores: Victor Sánchez, Crisarys Vasquez, Juan Gonzalez, Alexandra Esteves
 """
 
+import os
+import threading
 import cv2
 import numpy as np
 import time
@@ -38,8 +40,13 @@ from menu_interface import launch_menu
 
 
 def initialize_camera(width=640, height=480):
-    """Inicializa la cámara web con la resolución especificada."""
-    cap = cv2.VideoCapture(0)
+    """Inicializa la cámara web con la resolución especificada (usando DirectShow en Windows para apertura rápida)."""
+    if os.name == "nt":
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(0)
+    else:
+        cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     if not cap.isOpened():
@@ -62,23 +69,103 @@ def initialize_hands_detector(max_hands=2):
     )
 
 
+class _BackgroundVisionPreloader:
+    """
+    Pre-inicializa la cámara web y los modelos de MediaPipe (Hands + FaceMesh) en segundo plano
+    mientras el usuario visualiza la pantalla de carga de 3s y navega por el menú.
+    """
+
+    def __init__(self):
+        self.cap = None
+        self.hands_detector = None
+        self.face_mesh = None
+        self.error = None
+        self._stop_warmup = threading.Event()
+        self._ready_event = threading.Event()
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def _worker(self):
+        try:
+            self.hands_detector = initialize_hands_detector(max_hands=2)
+            self.face_mesh = initialize_face_mesh()
+            self.cap = initialize_camera()
+
+            # Leer primer cuadro y calentar los grafos TFLite en segundo plano
+            ret, warm_frame = self.cap.read()
+            if ret and warm_frame is not None:
+                rgb_warm = cv2.cvtColor(warm_frame, cv2.COLOR_BGR2RGB)
+                self.face_mesh.process(rgb_warm)
+                self.hands_detector.process(rgb_warm)
+        except Exception as exc:
+            self.error = exc
+        finally:
+            self._ready_event.set()
+
+        # Mantener el buffer de la cámara fresco mientras el usuario está en el menú
+        while not self._stop_warmup.is_set():
+            if self.cap is not None and self.cap.isOpened():
+                self.cap.grab()
+            time.sleep(0.05)
+
+    def acquire(self):
+        """Detiene el bucle de calentamiento y entrega (cap, hands_detector, face_mesh) listos para usar."""
+        self._stop_warmup.set()
+        self._ready_event.wait(timeout=10.0)
+        self._thread.join(timeout=1.0)
+        if self.error is not None:
+            raise self.error
+        return self.cap, self.hands_detector, self.face_mesh
+
+    def cleanup(self):
+        """Libera los recursos si el usuario sale desde el menú sin iniciar el programa."""
+        self._stop_warmup.set()
+        self._ready_event.wait(timeout=5.0)
+        self._thread.join(timeout=1.0)
+        if self.face_mesh is not None:
+            try:
+                self.face_mesh.close()
+            except Exception:
+                pass
+        if self.hands_detector is not None:
+            try:
+                self.hands_detector.close()
+            except Exception:
+                pass
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+
+
 def main(show_menu=True, initial_sensitivity=1.3):
     """Bucle principal del programa híbrido: Vista (cursor) + Manos (clics y funciones)."""
 
-    # 0. Pantalla de carga (3s) y Menú Principal
     sensitivity = float(initial_sensitivity)
+    preloader = None
+
+    # 0. Iniciar precarga de cámara + MediaPipe en segundo plano durante la pantalla de carga y el menú
     if show_menu:
+        preloader = _BackgroundVisionPreloader()
+        preloader.start()
         start_requested, sensitivity = launch_menu(initial_sensitivity=sensitivity)
         if not start_requested:
+            preloader.cleanup()
             print("Programa cerrado desde el menú principal.")
             return
 
-    # 1. Configuración
+    # 1. Configuración (recuperar instancias ya listas en segundo plano o inicializarlas)
     pyautogui.PAUSE = 0
     screen_width, screen_height = pyautogui.size()
-    cap = initialize_camera()
-    hands_detector = initialize_hands_detector(max_hands=2)
-    face_mesh = initialize_face_mesh()
+    if preloader is not None:
+        cap, hands_detector, face_mesh = preloader.acquire()
+    else:
+        cap = initialize_camera()
+        hands_detector = initialize_hands_detector(max_hands=2)
+        face_mesh = initialize_face_mesh()
 
     # Filtro One Euro para el cursor controlado por la vista y estabilizador de parpadeo (sin clic ocular)
     gaze_filter = OneEuroFilter2D(min_cutoff=1.2, beta=0.015)
