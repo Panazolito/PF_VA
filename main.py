@@ -34,6 +34,7 @@ from gesture_controller import GestureController, OneEuroFilter2D
 from user_lock import UserLock
 from blink_detector import BlinkDetector
 from main_ocular import initialize_face_mesh, compute_gaze_screen_pos
+from menu_interface import launch_menu
 
 
 def initialize_camera(width=640, height=480):
@@ -61,8 +62,16 @@ def initialize_hands_detector(max_hands=2):
     )
 
 
-def main():
+def main(show_menu=True, initial_sensitivity=1.3):
     """Bucle principal del programa híbrido: Vista (cursor) + Manos (clics y funciones)."""
+
+    # 0. Pantalla de carga (3s) y Menú Principal
+    sensitivity = float(initial_sensitivity)
+    if show_menu:
+        start_requested, sensitivity = launch_menu(initial_sensitivity=sensitivity)
+        if not start_requested:
+            print("Programa cerrado desde el menú principal.")
+            return
 
     # 1. Configuración
     pyautogui.PAUSE = 0
@@ -94,8 +103,6 @@ def main():
         continuity_threshold_px=150
     )
 
-    # Sensibilidad inicial (1.3x permite alcanzar las 4 esquinas con movimiento ocular natural y relajado)
-    sensitivity = 1.3
     p_time = 0
 
     print("=" * 60)
