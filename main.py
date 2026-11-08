@@ -2,20 +2,22 @@
 Control del Cursor y Gestos por Visión Artificial.
 Proyecto Semestral — Tópicos Especiales I (Visión Artificial) — UTP 2026.
 
-Utiliza MediaPipe Hands para detectar la mano del usuario frente a la cámara
-y traduce los gestos en acciones del sistema operativo: mover cursor, clic
-izquierdo, clic derecho y scroll.
-
-Sistema de seguridad multi-persona:
+Soporta dos modalidades seleccionables desde el menú principal:
+1. Modo Híbrido (Manos + Mirada):
+    - Vista (Iris)             → Mover el cursor
     - Palma abierta 2s         → Activar control (bloqueo de usuario)
     - Puño cerrado 2s          → Pausar control
-    - Mano desaparece 3s       → Liberar control automáticamente
+    - Pellizco pulgar-índice   → Clic izquierdo / arrastrar
+    - Pellizco pulgar-medio    → Clic derecho
+    - Índice + medio (✌️)      → Modo SCROLL guiado por la mirada
 
-Controles por gestos (una vez activado):
-    - Solo índice levantado    → Modo PUNTERO (mover cursor)
-    - Pellizco pulgar-índice   → Clic izquierdo (con debounce)
-    - Índice + medio           → Modo SCROLL (subir/bajar = scroll)
-    - Presionar 'q' o 'Esc'   → Salir del programa
+2. Modo Solo Mirada (100% Ocular y Facial):
+    - Vista (Iris)             → Mover el cursor
+    - Ambos ojos cerrados 2s   → Activar / Reactivar control
+    - Sonreír 2s               → Pausar control
+    - Guiñar ojo izquierdo     → Clic izquierdo
+    - Guiñar ojo derecho       → Clic derecho
+    - Sacar la lengua          → Modo SCROLL guiado por la mirada
 
 Autores: Victor Sánchez, Crisarys Vasquez, Juan Gonzalez, Alexandra Esteves
 """
@@ -36,6 +38,7 @@ from gesture_controller import GestureController, OneEuroFilter2D
 from user_lock import UserLock
 from blink_detector import BlinkDetector
 from main_ocular import initialize_face_mesh, compute_gaze_screen_pos
+from gaze_only_controller import GazeOnlyController
 from menu_interface import launch_menu
 
 
@@ -141,17 +144,145 @@ class _BackgroundVisionPreloader:
                 pass
 
 
+def run_gaze_only_mode(cap, face_mesh, screen_width, screen_height, sensitivity=1.3):
+    """
+    Ejecuta el modo 'Solo Mirada':
+    - Cursor controlado por el iris (Face Mesh 468 y 473 + Filtro One Euro)
+    - Ambos ojos cerrados 2s -> Activar / Reactivar control
+    - Sonreír 2s             -> Pausar control
+    - Guiño ojo izquierdo    -> Clic izquierdo
+    - Guiño ojo derecho      -> Clic derecho
+    - Sacar la lengua        -> Modo SCROLL (mirar arriba/abajo para desplazar)
+    """
+    gaze_filter = OneEuroFilter2D(min_cutoff=1.2, beta=0.015)
+    gaze_ctrl = GazeOnlyController(
+        screen_width=screen_width,
+        screen_height=screen_height,
+        execute_actions=True
+    )
+
+    p_time = 0.0
+
+    print("=" * 60)
+    print("  Modo SOLO MIRADA — Visión Artificial (UTP)")
+    print("=" * 60)
+    print("  Controles Oculares y Faciales:")
+    print("    - Ambos ojos cerrados 2s → Activar / Reanudar control")
+    print("    - Sonreír 2s             → Pausar control")
+    print("    - Mirada (Iris)          → Mover el cursor")
+    print("    - Guiñar ojo izquierdo   → Clic izquierdo")
+    print("    - Guiñar ojo derecho     → Clic derecho")
+    print("    - Sacar la lengua        → Modo SCROLL (mira arriba/abajo)")
+    print("  Ajustes en vivo:")
+    print("    - Tecla '+' o 's'        → Aumentar sensibilidad ocular")
+    print("    - Tecla '-' o 'a'        → Reducir sensibilidad ocular")
+    print("    - Tecla 'r'              → Recalibrar ojos y boca")
+    print("    - 'q' o 'Esc'            → Salir del programa")
+    print("=" * 60)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: No se pudo leer un frame de la cámara.")
+            break
+
+        frame = cv2.flip(frame, 1)
+        frame_h, frame_w, _ = frame.shape
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        current_time = time.perf_counter()
+
+        face_results = face_mesh.process(rgb_frame)
+        gaze_pos = None
+        face_landmarks = None
+
+        if face_results.multi_face_landmarks:
+            face_landmarks = face_results.multi_face_landmarks[0].landmark
+            eff_margin = 0.08 / sensitivity
+            gaze_x, gaze_y, (iris_r, iris_l) = compute_gaze_screen_pos(
+                landmarks=face_landmarks,
+                screen_width=screen_width,
+                screen_height=screen_height,
+                cursor_filter=gaze_filter,
+                timestamp=current_time,
+                margin_x=eff_margin,
+                margin_y=eff_margin
+            )
+            gaze_pos = (gaze_x, gaze_y)
+
+            # Dibujar puntos del iris
+            for pt in (iris_r, iris_l):
+                cv2.circle(frame, (int(pt.x * frame_w), int(pt.y * frame_h)), 3, (0, 255, 255), -1)
+
+            # Dibujar puntos de comisuras y labios para retroalimentación visual
+            for lip_idx in (13, 14, 61, 291):
+                lp = face_landmarks[lip_idx]
+                cv2.circle(frame, (int(lp.x * frame_w), int(lp.y * frame_h)), 2, (255, 200, 0), -1)
+
+        res = gaze_ctrl.update(
+            landmarks=face_landmarks,
+            gaze_pos=gaze_pos,
+            frame_w=frame_w,
+            frame_h=frame_h,
+            now=current_time
+        )
+
+        # Mover cursor si el estado es ACTIVO y no está bloqueado por guiño/scroll
+        if res["state"] == "ACTIVO" and gaze_pos is not None and res["allow_movement"] and not res["cursor_locked"]:
+            pyautogui.moveTo(gaze_pos[0], gaze_pos[1])
+
+        # Indicadores visuales en pantalla cuando se hace clic o scroll
+        if face_landmarks is not None:
+            if res["left_clicked"]:
+                p_l = face_landmarks[33]
+                cx, cy = int(p_l.x * frame_w), int(p_l.y * frame_h)
+                cv2.circle(frame, (cx, cy), 18, (0, 255, 0), cv2.FILLED)
+                cv2.putText(frame, "CLIC IZQ!", (cx - 30, cy - 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            if res["right_clicked"]:
+                p_r = face_landmarks[263]
+                cx, cy = int(p_r.x * frame_w), int(p_r.y * frame_h)
+                cv2.circle(frame, (cx, cy), 18, (255, 0, 255), cv2.FILLED)
+                cv2.putText(frame, "CLIC DER!", (cx - 30, cy - 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+            if res["mode"] == "SCROLL":
+                p_m = face_landmarks[14]
+                mx, my = int(p_m.x * frame_w), int(p_m.y * frame_h)
+                cv2.circle(frame, (mx, my), 18, (255, 200, 0), 2)
+                cv2.putText(frame, "SCROLL", (mx + 22, my + 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 200, 0), 2)
+
+        c_time = time.time()
+        fps = 1.0 / (c_time - p_time) if (c_time - p_time) > 0 else 0
+        p_time = c_time
+
+        gaze_ctrl.draw_hud(frame, res, fps=fps, sensitivity=sensitivity)
+        cv2.imshow("Modo Solo Mirada - Vision Artificial (UTP)", frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
+        elif key in (ord('+'), ord('='), ord('s'), ord('S')):
+            sensitivity = min(2.5, round(sensitivity + 0.1, 1))
+        elif key in (ord('-'), ord('_'), ord('a'), ord('A')):
+            sensitivity = max(0.7, round(sensitivity - 0.1, 1))
+        elif key in (ord('r'), ord('R')):
+            gaze_ctrl.reset_calibration()
+
+
 def main(show_menu=True, initial_sensitivity=1.3):
-    """Bucle principal del programa híbrido: Vista (cursor) + Manos (clics y funciones)."""
+    """Bucle principal del programa: permite elegir entre 'Manos + Mirada' y 'Solo Mirada'."""
 
     sensitivity = float(initial_sensitivity)
+    selected_mode = "manos_mirada"
     preloader = None
 
     # 0. Iniciar precarga de cámara + MediaPipe en segundo plano durante la pantalla de carga y el menú
     if show_menu:
         preloader = _BackgroundVisionPreloader()
         preloader.start()
-        start_requested, sensitivity = launch_menu(initial_sensitivity=sensitivity)
+        start_requested, selected_mode, sensitivity = launch_menu(initial_sensitivity=sensitivity)
         if not start_requested:
             preloader.cleanup()
             print("Programa cerrado desde el menú principal.")
@@ -167,51 +298,62 @@ def main(show_menu=True, initial_sensitivity=1.3):
         hands_detector = initialize_hands_detector(max_hands=2)
         face_mesh = initialize_face_mesh()
 
-    # Filtro One Euro para el cursor controlado por la vista y estabilizador de parpadeo (sin clic ocular)
-    gaze_filter = OneEuroFilter2D(min_cutoff=1.2, beta=0.015)
-    blink_detector = BlinkDetector(execute_click=False)
-
-    controller = GestureController(
-        screen_width=screen_width,
-        screen_height=screen_height,
-        execute_actions=True,
-        smoothing_factor=0.4,
-        hold_time_ms=150,
-        cooldown_ms=300,
-        move_cursor=False
-    )
-
-    user_lock = UserLock(
-        activation_time_s=2.0,
-        reactivation_time_s=1.0,
-        lost_timeout_s=3.0,
-        pause_timeout_s=10.0,
-        pause_gesture_time_s=2.0,
-        continuity_threshold_px=150
-    )
-
-    p_time = 0
-
-    print("=" * 60)
-    print("  Control Híbrido Vista + Manos — Visión Artificial (UTP)")
-    print("=" * 60)
-    print("  Activación (Seguridad Multi-Persona):")
-    print("    - Palma abierta 2s   → Activar control")
-    print("    - Puño cerrado 2s    → Pausar control")
-    print("  Control sin contacto (una vez ACTIVO):")
-    print("    - Vista (Mirada)     → Mover el cursor (puedes bajar/descansar la mano)")
-    print("    - Pellizco (P+I)     → Clic izquierdo (postura relajada, fija mirada)")
-    print("    - Pellizco + Mover   → Arrastrar elementos con la vista (Drag & Drop)")
-    print("    - Pellizco (P+M)     → Clic derecho")
-    print("    - Índice + medio ✌️  → Scroll con la VISTA (mantén ✌️ quieto y mira arriba/abajo)")
-    print("  Ajustes en vivo:")
-    print("    - Tecla '+' o 's'    → Aumentar sensibilidad ocular")
-    print("    - Tecla '-' o 'a'    → Reducir sensibilidad ocular")
-    print("    - Tecla 'r'          → Recalibrar umbral de parpadeo")
-    print("    - 'q' o 'Esc'        → Salir del programa")
-    print("=" * 60)
-
     try:
+        # Si el usuario eligió "Solo Mirada", ejecutar el bucle 100% ocular/facial
+        if selected_mode == "solo_mirada":
+            run_gaze_only_mode(
+                cap=cap,
+                face_mesh=face_mesh,
+                screen_width=screen_width,
+                screen_height=screen_height,
+                sensitivity=sensitivity
+            )
+            return
+
+        # De lo contrario, ejecutar el modo "Manos + Mirada" (Híbrido)
+        gaze_filter = OneEuroFilter2D(min_cutoff=1.2, beta=0.015)
+        blink_detector = BlinkDetector(execute_click=False)
+
+        controller = GestureController(
+            screen_width=screen_width,
+            screen_height=screen_height,
+            execute_actions=True,
+            smoothing_factor=0.4,
+            hold_time_ms=150,
+            cooldown_ms=300,
+            move_cursor=False
+        )
+
+        user_lock = UserLock(
+            activation_time_s=2.0,
+            reactivation_time_s=1.0,
+            lost_timeout_s=3.0,
+            pause_timeout_s=10.0,
+            pause_gesture_time_s=2.0,
+            continuity_threshold_px=150
+        )
+
+        p_time = 0
+
+        print("=" * 60)
+        print("  Control Híbrido Vista + Manos — Visión Artificial (UTP)")
+        print("=" * 60)
+        print("  Activación (Seguridad Multi-Persona):")
+        print("    - Palma abierta 2s   → Activar control")
+        print("    - Puño cerrado 2s    → Pausar control")
+        print("  Control sin contacto (una vez ACTIVO):")
+        print("    - Vista (Mirada)     → Mover el cursor (puedes bajar/descansar la mano)")
+        print("    - Pellizco (P+I)     → Clic izquierdo (postura relajada, fija mirada)")
+        print("    - Pellizco + Mover   → Arrastrar elementos con la vista (Drag & Drop)")
+        print("    - Pellizco (P+M)     → Clic derecho")
+        print("    - Índice + medio ✌️  → Scroll con la VISTA (mantén ✌️ quieto y mira arriba/abajo)")
+        print("  Ajustes en vivo:")
+        print("    - Tecla '+' o 's'    → Aumentar sensibilidad ocular")
+        print("    - Tecla '-' o 'a'    → Reducir sensibilidad ocular")
+        print("    - Tecla 'r'          → Recalibrar umbral de parpadeo")
+        print("    - 'q' o 'Esc'        → Salir del programa")
+        print("=" * 60)
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
