@@ -3,13 +3,13 @@ Interfaz Gráfica de Inicio: Pantalla de Carga (con video circular y música) y 
 Proyecto Semestral — Tópicos Especiales I (Visión Artificial) — UTP 2026.
 
 Incluye:
-- Pantalla de carga de 3 segundos en tono vinotinto oscuro con barra de progreso animada,
-  reproducción circular de DinoVideo.mp4 (sin bordes negros laterales) y música MusicaFondo.mp3
+- Pantalla de carga de 3 segundos en estilo Vinotinto Oscuro, con barra de progreso animada,
+  reproducción circular de Dino/DinoVideo.mp4 (sin bordes negros laterales) y música MusicaFondo.mp3
   a volumen alto que disminuye automáticamente al pasar al menú.
 - Menú principal con 3 opciones:
-    1. Empezar (inicia el sistema híbrido Vista + Manos con la sensibilidad configurada)
-    2. Configuraciones (permite subir o bajar la sensibilidad ocular del cursor)
-    3. Controles (explicación visual compacta con los íconos circulares de Dino)
+    1. Empezar -> Abre submenú para elegir entre "Manos + Mirada" o "Solo Mirada"
+    2. Configuraciones -> Permite subir o bajar la sensibilidad ocular del cursor
+    3. Controles -> Abre submenú para elegir entre controles de "Manos + Mirada" o "Solo Mirada"
 """
 
 import os
@@ -21,17 +21,17 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw
 
 
-# Paleta de colores Vinotinto Oscuro
-BG_VINOTINTO_DARK = "#2A060A"      # Fondo principal vinotinto muy oscuro
-BG_VINOTINTO_PANEL = "#3F0B12"     # Paneles / tarjetas interiores
-BG_VINOTINTO_CARD = "#4E1018"      # Tarjetas de controles / botones
-BG_BUTTON = "#681622"              # Color base de botón
-BG_BUTTON_HOVER = "#8A1E2E"        # Color hover de botón
-BG_ACCENT_GOLD = "#F2C94C"         # Acento dorado/cálido para barras y bordes activos
-BG_ACCENT_GREEN = "#6FCF97"        # Acento verde suave (tono Dino)
+# Paleta de colores Vinotinto Más Oscuro (Elegante y Profundo)
+BG_VINOTINTO_DARK = "#1B0306"      # Fondo principal vinotinto muy oscuro
+BG_VINOTINTO_PANEL = "#2B060B"     # Paneles / contenedores interiores vinotinto oscuro
+BG_VINOTINTO_CARD = "#380910"      # Tarjetas de controles / filas
+BG_BUTTON = "#4D0D17"              # Color base de botón vinotinto oscuro
+BG_BUTTON_HOVER = "#6B1421"        # Color hover de botón
+BG_ACCENT_GOLD = "#F2C94C"         # Dorado cálido para barras, títulos y bordes activos
+BG_ACCENT_GREEN = "#27AE60"        # Verde esmeralda para acción principal
 TEXT_PRIMARY = "#FFF5F6"           # Blanco cálido
-TEXT_SECONDARY = "#E2B8BE"         # Rosa/crema suave para subtítulos
-BORDER_COLOR = "#7A1F2D"           # Borde vinotinto medio
+TEXT_SECONDARY = "#DDB4BA"         # Rosa/crema suave para subtítulos
+BORDER_COLOR = "#631521"           # Borde vinotinto oscuro elegante
 
 
 class BackgroundMusicController:
@@ -82,13 +82,11 @@ def load_circular_dino_image(image_path, size_px, bg_hex=BG_VINOTINTO_CARD, bord
     recorta exactamente el círculo central y aplica una máscara circular suave anti-aliasing.
     """
     if not os.path.exists(image_path):
-        # Fallback circular si no se encuentra el archivo
         fallback = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
         draw = ImageDraw.Draw(fallback)
         draw.ellipse((2, 2, size_px - 3, size_px - 3), fill=bg_hex, outline="#FFFFFF", width=2)
         return ImageTk.PhotoImage(fallback)
 
-    # Usar numpy + cv2.imdecode para soportar rutas con 'ñ' o tildes en Windows
     raw_bytes = np.fromfile(image_path, dtype=np.uint8)
     img_bgr = cv2.imdecode(raw_bytes, cv2.IMREAD_UNCHANGED)
     if img_bgr is None:
@@ -97,14 +95,12 @@ def load_circular_dino_image(image_path, size_px, bg_hex=BG_VINOTINTO_CARD, bord
 
     if img_bgr.shape[2] == 4:
         img_rgba = cv2.cvtColor(img_bgr, cv2.COLOR_BGRA2RGBA)
-        # Reemplazar píxeles transparentes por blanco/vino según corresponda antes del recorte
         pil_img = Image.fromarray(img_rgba, mode="RGBA")
     else:
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(img_rgb, mode="RGB").convert("RGBA")
 
     w, h = pil_img.size
-    # En las imágenes Dino*.png (2400x1792), el círculo está centrado en (1201, 896) con radio ~890
     cx = w // 2
     cy = h // 2
     radius = int(min(w, h) * 0.495)
@@ -116,28 +112,24 @@ def load_circular_dino_image(image_path, size_px, bg_hex=BG_VINOTINTO_CARD, bord
 
     cropped = pil_img.crop((left, top, right, bottom))
 
-    # Redimensionar con super-muestreo para bordes circulares limpios
     scale = 2
     hi_size = size_px * scale
     cropped_hi = cropped.resize((hi_size, hi_size), Image.Resampling.LANCZOS)
 
-    # Crear máscara circular suave
     mask = Image.new("L", (hi_size, hi_size), 0)
     mask_draw = ImageDraw.Draw(mask)
     margin = 2 * scale
     mask_draw.ellipse((margin, margin, hi_size - margin - 1, hi_size - margin - 1), fill=255)
 
-    # Componer sobre el color de fondo del contenedor para evitar halos
     bg_rgb = tuple(int(bg_hex.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
     out_hi = Image.new("RGBA", (hi_size, hi_size), bg_rgb + (255,))
     out_hi.paste(cropped_hi, (0, 0), mask)
 
-    # Dibujar anillo blanco limpio alrededor del círculo
     if border_width > 0:
         ring_draw = ImageDraw.Draw(out_hi)
         ring_draw.ellipse(
             (margin, margin, hi_size - margin - 1, hi_size - margin - 1),
-            outline=(255, 245, 246, 255),
+            outline=(255, 255, 255, 255),
             width=border_width * scale
         )
 
@@ -159,14 +151,12 @@ class CircularVideoPlayer:
         if os.path.exists(video_path):
             self.cap = cv2.VideoCapture(video_path)
 
-        # Pre-calcular máscara circular en el tamaño de salida
         self.mask = np.zeros((diameter_px, diameter_px), dtype=np.uint8)
         center = diameter_px // 2
         radius = center - 2
         cv2.circle(self.mask, (center, center), radius, 255, -1, lineType=cv2.LINE_AA)
         self.mask_f = (self.mask.astype(np.float32) / 255.0)[..., None]
 
-        # Fondo base del color vinotinto oscuro
         self.bg_arr = np.full((diameter_px, diameter_px, 3), self.bg_rgb, dtype=np.float32)
 
     def get_next_frame_photo(self):
@@ -182,7 +172,6 @@ class CircularVideoPlayer:
                 return None
 
         h, w, _ = frame.shape
-        # En DinoVideo.mp4 (1920x1080), el círculo central está en cx=956, cy=540, radio~524
         cx = int(w * 0.498)
         cy = h // 2
         r = int(min(w, h) * 0.485)
@@ -196,13 +185,11 @@ class CircularVideoPlayer:
         resized_bgr = cv2.resize(cropped, (self.diameter_px, self.diameter_px), interpolation=cv2.INTER_AREA)
         resized_rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
 
-        # Mezclar suavemente el interior del círculo con el fondo vinotinto oscuro
         blended = (resized_rgb * self.mask_f + self.bg_arr * (1.0 - self.mask_f)).astype(np.uint8)
 
-        # Dibujar borde circular blanco suave para acabado limpio
         center = self.diameter_px // 2
         radius = center - 3
-        cv2.circle(blended, (center, center), radius, (255, 245, 246), 3, lineType=cv2.LINE_AA)
+        cv2.circle(blended, (center, center), radius, (255, 255, 255), 3, lineType=cv2.LINE_AA)
 
         pil_img = Image.fromarray(blended)
         return ImageTk.PhotoImage(pil_img)
@@ -217,26 +204,31 @@ class DinoMenuApp:
     """
     Aplicación gráfica de inicio:
     1) Pantalla de carga (3 segundos) con barra de progreso, DinoVideo circular y música alta.
-    2) Menú principal con Empezar, Configuraciones y Controles (música baja su volumen).
+    2) Menú principal con Empezar (submenú Manos + Mirada / Solo Mirada), Configuraciones y
+       Controles (submenú Manos + Mirada / Solo Mirada).
     """
 
     def __init__(self, initial_sensitivity=1.3):
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.dino_dir = os.path.join(self.base_dir, "Dino")
         self.sensitivity = float(initial_sensitivity)
         self.start_requested = False
+        self.selected_mode = "manos_mirada"  # "manos_mirada" o "solo_mirada"
 
-        # Rutas de recursos
-        self.video_path = os.path.join(self.base_dir, "DinoVideo.mp4")
+        # Rutas de recursos (carpeta Dino para imágenes y video, raíz para música)
+        self.video_path = self._resolve_dino_asset("DinoVideo.mp4")
         self.music_path = os.path.join(self.base_dir, "MusicaFondo.mp3")
-        self.dino_main_img_path = os.path.join(self.base_dir, "Dino1.jpg")
+        self.dino_main_img_path = self._resolve_dino_asset("Dino1.jpg")
 
-        # Buscar el archivo de puño cerrado evitando problemas de codificación con la 'ñ'
         puno_candidates = [
+            os.path.join(self.dino_dir, "DinoPuñoCerrado.png"),
             os.path.join(self.base_dir, "DinoPuñoCerrado.png"),
         ]
-        for fname in os.listdir(self.base_dir):
-            if fname.startswith("DinoPu") and fname.endswith(".png"):
-                puno_candidates.append(os.path.join(self.base_dir, fname))
+        for search_dir in (self.dino_dir, self.base_dir):
+            if os.path.isdir(search_dir):
+                for fname in os.listdir(search_dir):
+                    if fname.startswith("DinoPu") and fname.endswith(".png"):
+                        puno_candidates.append(os.path.join(search_dir, fname))
         self.puno_path = puno_candidates[0]
         for c in puno_candidates:
             if os.path.exists(c):
@@ -271,14 +263,42 @@ class DinoMenuApp:
             ),
         ]
 
+        self.gaze_control_items_data = [
+            (
+                "DinoOjosCerrados.png",
+                "Dejar ambos ojos cerrados 2s  →  Activar / Reanudar el control",
+                "Mantén ambos ojos cerrados durante 2 segundos para activar o reanudar el control."
+            ),
+            (
+                "DinoSonrisa.png",
+                "Sonreír por 2s  →  Pausar el control",
+                "Mantén una sonrisa durante 2 segundos para pausar el sistema de forma segura."
+            ),
+            (
+                "DinoOjoIzquierdo.png",
+                "Guiñar ojo izquierdo  →  Clic izquierdo",
+                "Cierra brevemente el ojo izquierdo (con el derecho abierto) para hacer clic izquierdo."
+            ),
+            (
+                "DinoOjoDerecho.png",
+                "Guiñar ojo derecho  →  Clic derecho",
+                "Cierra brevemente el ojo derecho (con el izquierdo abierto) para ejecutar clic derecho."
+            ),
+            (
+                "DinoLenguaAfuera.png",
+                "Sacar la lengua  →  Modo SCROLL",
+                "Mantén la lengua afuera y mueve tu mirada hacia arriba o abajo para desplazar."
+            ),
+        ]
+
         # Ventana Tkinter
         self.root = tk.Tk()
-        self.root.title("Control Híbrido Vista + Manos — Visión Artificial (UTP)")
+        self.root.title("Control Multimodal — Visión Artificial (UTP)")
         self.root.configure(bg=BG_VINOTINTO_DARK)
         self.root.resizable(False, False)
 
-        # Centrar ventana de 820x650
-        win_w, win_h = 820, 650
+        # Centrar ventana de 1020x650 (más ancha horizontalmente para que ningún texto se corte)
+        win_w, win_h = 1020, 650
         scr_w = self.root.winfo_screenwidth()
         scr_h = self.root.winfo_screenheight()
         pos_x = max(0, (scr_w - win_w) // 2)
@@ -299,6 +319,15 @@ class DinoMenuApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _resolve_dino_asset(self, filename):
+        """Busca un recurso primero en la carpeta Dino/ y como respaldo en el directorio base."""
+        if os.path.isabs(filename) and os.path.exists(filename):
+            return filename
+        in_dino = os.path.join(self.dino_dir, os.path.basename(filename))
+        if os.path.exists(in_dino):
+            return in_dino
+        return os.path.join(self.base_dir, os.path.basename(filename))
+
     def _clear_container(self):
         self._loading_active = False
         for widget in self.main_container.winfo_children():
@@ -311,13 +340,11 @@ class DinoMenuApp:
         self._clear_container()
         self._loading_active = True
 
-        # Iniciar música a volumen alto (1000 = 100%)
         self.music.start(volume=1000)
 
         frame = tk.Frame(self.main_container, bg=BG_VINOTINTO_DARK)
         frame.pack(fill="both", expand=True, padx=40, pady=25)
 
-        # Título superior
         lbl_tag = tk.Label(
             frame,
             text="UNIVERSIDAD TECNOLÓGICA DE PANAMÁ • VISIÓN ARTIFICIAL",
@@ -336,7 +363,6 @@ class DinoMenuApp:
         )
         lbl_title.pack(pady=(0, 12))
 
-        # Tarjeta de la barra de carga (arriba)
         bar_card = tk.Frame(
             frame,
             bg=BG_VINOTINTO_PANEL,
@@ -356,27 +382,24 @@ class DinoMenuApp:
         )
         self.lbl_loading_status.pack(anchor="w", pady=(0, 8))
 
-        # Canvas para la barrita que se va llenando
-        self.bar_width = 560
+        self.bar_width = 620
         self.bar_height = 24
         self.bar_canvas = tk.Canvas(
             bar_card,
             width=self.bar_width,
             height=self.bar_height,
-            bg="#1E0407",
+            bg="#120204",
             highlightthickness=1,
             highlightbackground=BORDER_COLOR
         )
         self.bar_canvas.pack()
 
-        # Rectángulo de relleno de la barra
         self.bar_fill_rect = self.bar_canvas.create_rectangle(
             0, 0, 0, self.bar_height,
             fill=BG_ACCENT_GOLD,
-             width=0
+            width=0
         )
 
-        # Video circular abajo (sin los bordes negros de los lados)
         video_holder = tk.Frame(frame, bg=BG_VINOTINTO_DARK)
         video_holder.pack(expand=True, pady=(5, 5))
 
@@ -404,12 +427,10 @@ class DinoMenuApp:
         progress = min(1.0, elapsed / self.loading_duration_s)
         pct = int(progress * 100)
 
-        # Actualizar barrita
         fill_w = int(self.bar_width * progress)
         self.bar_canvas.coords(self.bar_fill_rect, 0, 0, fill_w, self.bar_height)
         self.lbl_loading_status.config(text=f"Cargando módulos de Visión Artificial... {pct}%")
 
-        # Actualizar frame circular de DinoVideo.mp4
         photo = self.video_player.get_next_frame_photo()
         if photo is not None:
             self._current_video_photo = photo
@@ -418,7 +439,6 @@ class DinoMenuApp:
         if elapsed < self.loading_duration_s:
             self.root.after(30, self._update_loading_tick)
         else:
-            # A los 3 segundos: bajar el volumen de la música y mostrar el menú
             self._loading_active = False
             self.video_player.release()
             self._fade_music_to_menu_volume(current_vol=1000, target_vol=220)
@@ -444,7 +464,6 @@ class DinoMenuApp:
         frame = tk.Frame(self.main_container, bg=BG_VINOTINTO_DARK)
         frame.pack(fill="both", expand=True, padx=45, pady=24)
 
-        # Encabezado con imagen circular de Dino
         header = tk.Frame(frame, bg=BG_VINOTINTO_DARK)
         header.pack(fill="x", pady=(0, 12))
 
@@ -458,7 +477,7 @@ class DinoMenuApp:
 
         tk.Label(
             header,
-            text="CONTROL MULTIMODAL VISTA + MANOS",
+            text="CONTROL MULTIMODAL POR VISIÓN ARTIFICIAL",
             font=("Segoe UI", 20, "bold"),
             fg=TEXT_PRIMARY,
             bg=BG_VINOTINTO_DARK
@@ -466,13 +485,12 @@ class DinoMenuApp:
 
         tk.Label(
             header,
-            text=f"Sensibilidad ocular actual: {self.sensitivity:.1f}x   •   Rastreo de Iris + Gestos Manuales",
+            text=f"Sensibilidad ocular actual: {self.sensitivity:.1f}x   •   Rastreo de Iris + Gestos",
             font=("Segoe UI", 10),
-            fg=BG_ACCENT_GOLD,
+            fg=TEXT_SECONDARY,
             bg=BG_VINOTINTO_DARK
         ).pack(pady=(3, 0))
 
-        # Panel central con las 3 opciones solicitadas
         menu_panel = tk.Frame(
             frame,
             bg=BG_VINOTINTO_PANEL,
@@ -481,13 +499,13 @@ class DinoMenuApp:
             padx=35,
             pady=24
         )
-        menu_panel.pack(fill="x", padx=95, pady=10)
+        menu_panel.pack(fill="x", padx=65, pady=10)
 
         self._create_menu_button(
             menu_panel,
             text="▶   Empezar",
-            subtitle="Iniciar el control del cursor con la vista y gestos en tiempo real",
-            command=self._on_start_clicked,
+            subtitle="Elegir modalidad (Manos + Mirada  o  Solo Mirada) e iniciar el sistema",
+            command=self.show_start_mode_submenu,
             primary=True
         ).pack(fill="x", pady=(0, 14))
 
@@ -501,11 +519,10 @@ class DinoMenuApp:
         self._create_menu_button(
             menu_panel,
             text="✋   Controles",
-            subtitle="Ver la guía rápida de gestos con Dino para usar el sistema",
-            command=self.show_controls_screen
+            subtitle="Consultar los gestos y comandos de Manos + Mirada o Solo Mirada",
+            command=self.show_controls_mode_submenu
         ).pack(fill="x", pady=(0, 4))
 
-        # Botón inferior para salir
         btn_exit = tk.Button(
             frame,
             text="Salir del programa",
@@ -520,9 +537,86 @@ class DinoMenuApp:
         )
         btn_exit.pack(pady=(8, 0))
 
+    # =========================================================================
+    # 2.1 SUBMENÚ AL PRESIONAR "EMPEZAR": (Manos + Mirada | Solo Mirada)
+    # =========================================================================
+    def show_start_mode_submenu(self):
+        self._clear_container()
+
+        frame = tk.Frame(self.main_container, bg=BG_VINOTINTO_DARK)
+        frame.pack(fill="both", expand=True, padx=45, pady=28)
+
+        header = tk.Frame(frame, bg=BG_VINOTINTO_DARK)
+        header.pack(fill="x", pady=(0, 14))
+
+        if self._menu_dino_photo is None:
+            self._menu_dino_photo = load_circular_dino_image(
+                self.dino_main_img_path, size_px=125, bg_hex=BG_VINOTINTO_DARK, border_width=3
+            )
+
+        tk.Label(header, image=self._menu_dino_photo, bg=BG_VINOTINTO_DARK).pack(pady=(0, 10))
+
+        tk.Label(
+            header,
+            text="SELECCIONA EL MODO DE EJECUCIÓN",
+            font=("Segoe UI", 19, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack()
+
+        tk.Label(
+            header,
+            text="Elige cómo deseas controlar el cursor y las acciones del sistema:",
+            font=("Segoe UI", 10),
+            fg=TEXT_SECONDARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack(pady=(4, 0))
+
+        sub_panel = tk.Frame(
+            frame,
+            bg=BG_VINOTINTO_PANEL,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=2,
+            padx=35,
+            pady=28
+        )
+        sub_panel.pack(fill="x", padx=65, pady=16)
+
+        self._create_menu_button(
+            sub_panel,
+            text="🖐️ + 👁️   Manos + Mirada",
+            subtitle="Mover el cursor con la vista y ejecutar clics, scroll y pausa con gestos de la mano",
+            command=lambda: self._start_with_mode("manos_mirada"),
+            primary=True
+        ).pack(fill="x", pady=(0, 16))
+
+        self._create_menu_button(
+            sub_panel,
+            text="👁️   Solo Mirada",
+            subtitle="Mover el cursor con la vista, clic con guiños, scroll con la lengua y pausa sonriendo",
+            command=lambda: self._start_with_mode("solo_mirada"),
+            primary=True
+        ).pack(fill="x", pady=(0, 4))
+
+        btn_back = tk.Button(
+            frame,
+            text="←   Volver al Menú Principal",
+            font=("Segoe UI", 11, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_BUTTON,
+            activebackground=BG_BUTTON_HOVER,
+            activeforeground=TEXT_PRIMARY,
+            padx=22,
+            pady=8,
+            bd=0,
+            cursor="hand2",
+            command=self.show_main_menu
+        )
+        btn_back.pack(pady=(12, 0))
+
     def _create_menu_button(self, parent, text, subtitle, command, primary=False):
-        bg_norm = "#7B1826" if primary else BG_BUTTON
-        bg_hov = "#9E2032" if primary else BG_BUTTON_HOVER
+        bg_norm = "#5C101C" if primary else BG_BUTTON
+        bg_hov = "#7D1727" if primary else BG_BUTTON_HOVER
         border_col = BG_ACCENT_GOLD if primary else BORDER_COLOR
 
         card = tk.Frame(
@@ -564,8 +658,8 @@ class DinoMenuApp:
 
         def on_leave(_e):
             card.config(bg=bg_norm)
-            lbl_main.config(bg=bg_norm)
-            lbl_sub.config(bg=bg_norm)
+            lbl_main.config(bg_norm)
+            lbl_sub.config(bg_norm)
 
         for w in (card, lbl_main, lbl_sub):
             w.bind("<Enter>", on_enter)
@@ -626,7 +720,6 @@ class DinoMenuApp:
         )
         self.lbl_sens_value.pack(pady=(8, 10))
 
-        # Controles '-' [Slider] '+'
         ctrl_row = tk.Frame(panel, bg=BG_VINOTINTO_PANEL)
         ctrl_row.pack(fill="x", pady=6)
 
@@ -653,7 +746,7 @@ class DinoMenuApp:
             orient="horizontal",
             bg=BG_VINOTINTO_PANEL,
             fg=TEXT_PRIMARY,
-            troughcolor="#220408",
+            troughcolor="#120204",
             activebackground=BG_ACCENT_GOLD,
             highlightthickness=0,
             showvalue=False,
@@ -677,7 +770,6 @@ class DinoMenuApp:
         )
         btn_plus.pack(side="left", padx=(14, 10))
 
-        # Presets rápidos para distintas pantallas
         presets_frame = tk.Frame(panel, bg=BG_VINOTINTO_PANEL)
         presets_frame.pack(pady=(16, 6))
 
@@ -711,10 +803,9 @@ class DinoMenuApp:
             font=("Segoe UI", 9, "italic"),
             fg=TEXT_SECONDARY,
             bg=BG_VINOTINTO_PANEL,
-            wraplength=560
+            wraplength=720
         ).pack(pady=(14, 0))
 
-        # Botón volver
         btn_back = tk.Button(
             frame,
             text="←   Guardar y Volver al Menú",
@@ -746,9 +837,85 @@ class DinoMenuApp:
         self.lbl_sens_value.config(text=f"{self.sensitivity:.1f}x")
 
     # =========================================================================
-    # 4. PANTALLA DE CONTROLES (5 controles básicos con imágenes de Dino)
+    # 4. SUBMENÚ Y PANTALLAS DE CONTROLES (Manos + Mirada | Solo Mirada)
     # =========================================================================
+    def show_controls_mode_submenu(self):
+        """Submenú intermedio de Controles para elegir entre Manos + Mirada o Solo Mirada."""
+        self._clear_container()
+
+        frame = tk.Frame(self.main_container, bg=BG_VINOTINTO_DARK)
+        frame.pack(fill="both", expand=True, padx=45, pady=28)
+
+        header = tk.Frame(frame, bg=BG_VINOTINTO_DARK)
+        header.pack(fill="x", pady=(0, 14))
+
+        if self._menu_dino_photo is None:
+            self._menu_dino_photo = load_circular_dino_image(
+                self.dino_main_img_path, size_px=125, bg_hex=BG_VINOTINTO_DARK, border_width=3
+            )
+
+        tk.Label(header, image=self._menu_dino_photo, bg=BG_VINOTINTO_DARK).pack(pady=(0, 10))
+
+        tk.Label(
+            header,
+            text="GUÍA DE CONTROLES DEL SISTEMA",
+            font=("Segoe UI", 19, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack()
+
+        tk.Label(
+            header,
+            text="Selecciona la modalidad cuyos controles deseas consultar:",
+            font=("Segoe UI", 10),
+            fg=TEXT_SECONDARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack(pady=(4, 0))
+
+        sub_panel = tk.Frame(
+            frame,
+            bg=BG_VINOTINTO_PANEL,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=2,
+            padx=35,
+            pady=28
+        )
+        sub_panel.pack(fill="x", padx=65, pady=16)
+
+        self._create_menu_button(
+            sub_panel,
+            text="🖐️ + 👁️   Manos + Mirada",
+            subtitle="Ver los 5 controles gestuales de la mano combinados con la mirada",
+            command=self.show_controls_screen,
+            primary=True
+        ).pack(fill="x", pady=(0, 16))
+
+        self._create_menu_button(
+            sub_panel,
+            text="👁️   Solo Mirada",
+            subtitle="Ver los 5 controles del modo 100% ocular y gestos faciales",
+            command=self.show_controls_gaze_only_screen,
+            primary=True
+        ).pack(fill="x", pady=(0, 4))
+
+        btn_back = tk.Button(
+            frame,
+            text="←   Volver al Menú Principal",
+            font=("Segoe UI", 11, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_BUTTON,
+            activebackground=BG_BUTTON_HOVER,
+            activeforeground=TEXT_PRIMARY,
+            padx=22,
+            pady=8,
+            bd=0,
+            cursor="hand2",
+            command=self.show_main_menu
+        )
+        btn_back.pack(pady=(12, 0))
+
     def show_controls_screen(self):
+        """Controles de la modalidad 'Manos + Mirada' con las imágenes circulares del Dino."""
         self._clear_container()
         self._control_photos.clear()
 
@@ -757,7 +924,7 @@ class DinoMenuApp:
 
         tk.Label(
             frame,
-            text="✋  CONTROLES BÁSICOS DEL SISTEMA",
+            text="✋  CONTROLES: MANOS + MIRADA",
             font=("Segoe UI", 17, "bold"),
             fg=TEXT_PRIMARY,
             bg=BG_VINOTINTO_DARK
@@ -782,7 +949,7 @@ class DinoMenuApp:
         list_panel.pack(fill="both", expand=True, padx=10)
 
         for img_file, title_txt, desc_txt in self.control_items_data:
-            img_path = img_file if os.path.isabs(img_file) else os.path.join(self.base_dir, img_file)
+            img_path = self._resolve_dino_asset(img_file)
             photo = load_circular_dino_image(img_path, size_px=68, bg_hex=BG_VINOTINTO_CARD, border_width=2)
             self._control_photos.append(photo)
 
@@ -796,11 +963,9 @@ class DinoMenuApp:
             )
             row_card.pack(fill="x", pady=4)
 
-            # Imagen circular chiquita a la izquierda/lado
             lbl_icon = tk.Label(row_card, image=photo, bg=BG_VINOTINTO_CARD, bd=0)
             lbl_icon.pack(side="left", padx=(4, 14))
 
-            # Texto del control y breve explicación
             txt_col = tk.Frame(row_card, bg=BG_VINOTINTO_CARD)
             txt_col.pack(side="left", fill="both", expand=True)
 
@@ -817,14 +982,14 @@ class DinoMenuApp:
                 txt_col,
                 text=desc_txt,
                 font=("Segoe UI", 9),
-                fg=TEXT_PRIMARY,
+                fg=TEXT_SECONDARY,
                 bg=BG_VINOTINTO_CARD,
                 anchor="w"
             ).pack(fill="x")
 
         btn_back = tk.Button(
             frame,
-            text="←   Volver al Menú Principal",
+            text="←   Volver a Selección de Controles",
             font=("Segoe UI", 11, "bold"),
             fg=TEXT_PRIMARY,
             bg=BG_BUTTON,
@@ -834,14 +999,104 @@ class DinoMenuApp:
             pady=7,
             bd=0,
             cursor="hand2",
-            command=self.show_main_menu
+            command=self.show_controls_mode_submenu
+        )
+        btn_back.pack(pady=(10, 2))
+
+    def show_controls_gaze_only_screen(self):
+        """Controles de la modalidad 'Solo Mirada' con las imágenes circulares del Dino."""
+        self._clear_container()
+        self._control_photos.clear()
+
+        frame = tk.Frame(self.main_container, bg=BG_VINOTINTO_DARK)
+        frame.pack(fill="both", expand=True, padx=36, pady=16)
+
+        tk.Label(
+            frame,
+            text="👁️  CONTROLES: SOLO MIRADA",
+            font=("Segoe UI", 17, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack(pady=(0, 2))
+
+        tk.Label(
+            frame,
+            text="Mueve el cursor con tu mirada y ejecuta todas las acciones con gestos de ojos y boca:",
+            font=("Segoe UI", 9),
+            fg=TEXT_SECONDARY,
+            bg=BG_VINOTINTO_DARK
+        ).pack(pady=(0, 8))
+
+        list_panel = tk.Frame(
+            frame,
+            bg=BG_VINOTINTO_PANEL,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=2,
+            padx=16,
+            pady=10
+        )
+        list_panel.pack(fill="both", expand=True, padx=10)
+
+        for img_file, title_txt, desc_txt in self.gaze_control_items_data:
+            img_path = self._resolve_dino_asset(img_file)
+            photo = load_circular_dino_image(img_path, size_px=68, bg_hex=BG_VINOTINTO_CARD, border_width=2)
+            self._control_photos.append(photo)
+
+            row_card = tk.Frame(
+                list_panel,
+                bg=BG_VINOTINTO_CARD,
+                highlightbackground=BORDER_COLOR,
+                highlightthickness=1,
+                padx=12,
+                pady=5
+            )
+            row_card.pack(fill="x", pady=4)
+
+            lbl_icon = tk.Label(row_card, image=photo, bg=BG_VINOTINTO_CARD, bd=0)
+            lbl_icon.pack(side="left", padx=(4, 14))
+
+            txt_col = tk.Frame(row_card, bg=BG_VINOTINTO_CARD)
+            txt_col.pack(side="left", fill="both", expand=True)
+
+            tk.Label(
+                txt_col,
+                text=f"•  {title_txt}",
+                font=("Segoe UI", 12, "bold"),
+                fg=BG_ACCENT_GOLD,
+                bg=BG_VINOTINTO_CARD,
+                anchor="w"
+            ).pack(fill="x", pady=(2, 1))
+
+            tk.Label(
+                txt_col,
+                text=desc_txt,
+                font=("Segoe UI", 9),
+                fg=TEXT_SECONDARY,
+                bg=BG_VINOTINTO_CARD,
+                anchor="w"
+            ).pack(fill="x")
+
+        btn_back = tk.Button(
+            frame,
+            text="←   Volver a Selección de Controles",
+            font=("Segoe UI", 11, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BG_BUTTON,
+            activebackground=BG_BUTTON_HOVER,
+            activeforeground=TEXT_PRIMARY,
+            padx=22,
+            pady=7,
+            bd=0,
+            cursor="hand2",
+            command=self.show_controls_mode_submenu
         )
         btn_back.pack(pady=(10, 2))
 
     # =========================================================================
     # ACCIONES DE SALIDA E INICIO
     # =========================================================================
-    def _on_start_clicked(self):
+    def _start_with_mode(self, mode_name):
+        self.selected_mode = mode_name
         self.start_requested = True
         self._loading_active = False
         self.video_player.release()
@@ -856,10 +1111,10 @@ class DinoMenuApp:
         self.root.destroy()
 
     def run(self):
-        """Ejecuta la pantalla de carga + menú y retorna (start_requested, sensitivity)."""
+        """Ejecuta la pantalla de carga + menú y retorna (start_requested, selected_mode, sensitivity)."""
         self.show_loading_screen()
         self.root.mainloop()
-        return self.start_requested, self.sensitivity
+        return self.start_requested, self.selected_mode, self.sensitivity
 
 
 def launch_menu(initial_sensitivity=1.3):
@@ -869,5 +1124,5 @@ def launch_menu(initial_sensitivity=1.3):
 
 
 if __name__ == "__main__":
-    started, sens = launch_menu()
-    print(f"Menú finalizado -> Empezar={started}, Sensibilidad={sens}")
+    started, mode, sens = launch_menu()
+    print(f"Menú finalizado -> Empezar={started}, Modo={mode}, Sensibilidad={sens}")
